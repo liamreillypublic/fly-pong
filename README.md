@@ -24,15 +24,54 @@ covers the top half of the screen, its right eye the bottom half.
   fly's real looming-escape neurons, which the connectome wires strictly
   to one side.
 
-The one shortcut, stated on the page too: the link from the retina image to
-the looming detectors is computed by this program, because the simplified
-leaky integrate-and-fire model cannot carry a small patch of retinal input
-through the fly's lobula. Everything downstream of the looming detectors is
-the fly's own wiring.
+The one shortcut on the sensory side, stated on the page too: the link from
+the retina image to the looming detectors is computed by this program,
+because the simplified leaky integrate-and-fire model cannot carry a small
+patch of retinal input through the fly's lobula. Everything downstream of
+the looming detectors is the fly's own wiring.
 
-How good is it? Against the built-in bot at the default ball speed, the fly
-returned 5 of 8 balls in a 30 second test. Slow the ball down and it returns
-nearly everything; speed it up and its reaction time loses.
+## Learning
+
+The fly learns from reward and punishment through its own synapses, and
+remembers across restarts.
+
+- **Dopamine is real cells.** Returning the ball stimulates the fly's 316
+  PAM dopamine neurons; missing it stimulates its 16 PPL1 neurons. These
+  are the cells a real fly uses for reward and punishment. Their spikes
+  travel down their real axons, rebuilt from the raw synapse counts, to the
+  8,599 neurons they actually innervate: 4,061 of the 4,064 Kenyon cells and
+  all 97 output neurons of the mushroom body, the fly's learning center,
+  plus 74 descending neurons.
+- **Three-factor plasticity.** 4.36 million synapses (everything onto a
+  dopamine-innervated neuron, plus the visual-projection-to-descending
+  pathway that drives the paddle) keep an eligibility trace that rises when
+  the sending cell fired just before the receiving cell and fades over 100
+  brain milliseconds. Each tick, every eligible synapse that received
+  dopamine changes: reward strengthens, punishment weakens, scaled by the
+  learning rate. Synapses never change sign and stay between 0.1x and 4x
+  their original strength.
+- **Memory.** Learned weights are saved to `data/learned.npz` every minute
+  and on shutdown, and reloaded at start. "Forget everything" restores the
+  original connectome.
+
+Two additions are ours, not the fly's, and the page says so: a weak diffuse
+dopamine signal also reaches the paddle pathway (mushroom-body output cannot
+reach the escape neurons in this model, so without it learning could never
+change play), and reward potentiates while punishment depresses, where the
+real mushroom body depresses in both cases with valence set by which output
+neuron is affected.
+
+One honest finding: in Pong the mushroom body never changes, because nothing
+in the game drives its Kenyon cells. All of the learning happens on the
+reflex pathway. The fly cannot learn a new direction of movement, which is
+fixed by anatomy; it can only learn how fast and how hard to react.
+
+### Measured
+
+<!-- RESULTS -->
+
+Slow the ball down and the fly returns nearly everything; speed it up and
+its reaction time loses regardless of learning.
 
 ## Setup
 

@@ -461,7 +461,14 @@ function connect() {
     } else if (msg.type === "forget_ok") {
       replied(); learnHistory = []; toast("The fly forgot everything and is back to the original connectome."); sendState();
     } else if (msg.type === "error") {
-      replied(); toast(msg.message); setFlyMove(0); sendState();
+      replied(); setFlyMove(0);
+      if (msg.fatal) {
+        // another tab took over the brain; stop driving until this page is reloaded
+        $("status").textContent = "another tab is driving the fly · reload this page to take over";
+        toast(msg.message, 8000);
+        return;
+      }
+      toast(msg.message); sendState();
     }
   };
 }

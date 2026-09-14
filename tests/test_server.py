@@ -134,6 +134,22 @@ async def test_forget(aiohttp_client, tmp_path):
     await ws.close()
 
 
+async def test_only_the_newest_connection_drives_the_fly(aiohttp_client, tmp_path):
+    client, ws1, _, brain = await connect(aiohttp_client, tmp_path=tmp_path)
+    ws2 = await client.ws_connect("/ws")
+    await ws2.receive_json()                                   # hello
+    await ws1.send_json(STATE)
+    err = await ws1.receive_json()
+    assert err["type"] == "error" and err["fatal"] is True and "another tab" in err["message"]
+    assert brain.ticks == []
+    await ws2.send_json(STATE)
+    assert (await ws2.receive_json())["type"] == "command"
+    await ws2.close()
+    await ws1.send_json(STATE)                                 # the survivor takes over again
+    assert (await ws1.receive_json())["type"] == "command"
+    await ws1.close()
+
+
 async def test_index_is_served(aiohttp_client, tmp_path):
     client, ws, _, _ = await connect(aiohttp_client, tmp_path=tmp_path)
     await ws.close()

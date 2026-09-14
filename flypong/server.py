@@ -90,6 +90,7 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
     readout = MotorReadout()
     loop = asyncio.get_running_loop()
     learning_info = getattr(brain, "learning_info", lambda: None)()
+    request.app["driver"] = ws   # a new tab takes over; older tabs are told to reload
     await ws.send_json({"type": "hello", "neurons": brain.n, "device": brain.device,
                         "defaults": config.defaults(), "learning": learning_info})
     async for msg in ws:
@@ -106,6 +107,13 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
                 readout.reset()
                 await ws.send_json({"type": "reset_ok"})
             elif kind == "state":
+                # One brain, one driver: the newest connection controls the fly.
+                driver = request.app.get("driver")
+                if driver is not None and driver is not ws and not driver.closed:
+                    await ws.send_json({"type": "error", "fatal": True,
+                                        "message": "another tab is driving the fly; close it or reload this one to take over"})
+                    continue
+                request.app["driver"] = ws
                 params = config.clamp_params(data.get("params"))
                 k = int(params["steps_per_tick"])
                 state = parse_state(data)
