@@ -82,16 +82,20 @@ class FlyBrain:
     def set_monitors(self, **sets) -> None:
         self._monitors = {name: self._idx(values) for name, values in sets.items()}
 
-    def configure(self, dt_ms: float | None = None, noise_mv: float | None = None) -> None:
+    def configure(self, dt_ms: float | None = None, noise_mv: float | None = None,
+                  depression_u: float | None = None) -> None:
         if dt_ms is not None and abs(dt_ms - self.model.dt) > 1e-9:
             self.model.set_dt(dt_ms)
         if noise_mv is not None and abs(noise_mv - self.model.noise_mv) > 1e-9:
             self.model.set_noise(noise_mv)
+        if depression_u is not None and abs(depression_u - self.model.depression_u) > 1e-9:
+            self.model.set_depression(depression_u)
 
     def model_info(self) -> dict:
         m = self.model
-        return {"name": "shiu-lif", "dt_ms": m.dt, "noise_mv": m.noise_mv, "delay_steps": m.delay_steps,
-                "ref_steps": m.ref_steps, "psp_peak_factor": round(m.psp_peak_factor, 4)}
+        return {"name": "shiu-lif", "dt_ms": m.dt, "noise_mv": m.noise_mv, "depression_u": m.depression_u,
+                "delay_steps": m.delay_steps, "ref_steps": m.ref_steps,
+                "psp_peak_factor": round(m.psp_peak_factor, 4), "steps_per_s": getattr(self, "steps_per_s", None)}
 
     # ----- learning -----
     def attach_plasticity(self, plasticity) -> None:

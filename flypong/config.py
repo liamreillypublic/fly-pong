@@ -58,7 +58,6 @@ class Param:
 
 PARAMS: dict[str, Param] = {
     "loom_strength": Param(0.3, 0.0, 1.0),
-    "retina_strength": Param(0.3, 0.0, 1.0),
     "ball_radius_columns": Param(2, 0, 6),
     "steps_per_tick": Param(4, 1, 16),
     "motor_decay": Param(0.7, 0.0, 0.99),
@@ -67,13 +66,14 @@ PARAMS: dict[str, Param] = {
     "learning_enabled": Param(1, 0, 1),
     "learning_rate": Param(0.02, 0.0, 0.2),
     "dt_ms": Param(1.0, 0.25, 1.0),
-    "noise_mv": Param(0.5, 0.0, 3.0),
-    "light": Param(1.0, 0.0, 3.0),
+    "noise_mv": Param(0.5, 0.0, 1.5),
+    "light": Param(0.15, 0.0, 1.0),
     "ball_contrast": Param(1.0, 0.0, 1.0),
     "loom_shortcut": Param(1, 0, 1),
     "mb_strength": Param(0.3, 0.0, 1.0),
     "readout_motor": Param(0, 0, 1),
     "punish_reflex": Param(0, 0, 1),
+    "depression_u": Param(0.2, 0.0, 0.5),
 }
 DT_CHOICES = (1.0, 0.5, 0.25)
 

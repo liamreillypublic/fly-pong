@@ -27,6 +27,8 @@ button { background: #2a3040; color: var(--fg); border: 1px solid #3a4154; borde
 button:hover { background: #343b4e; }
 button.active { border-color: var(--accent); color: var(--accent); }
 input[type=range] { width: 130px; }
+select { background: #2a3040; color: var(--fg); border: 1px solid #3a4154; border-radius: 6px; padding: 4px 8px; font: inherit; }
+#activity { font-variant-numeric: tabular-nums; font-size: 13px; }
 .setting { border-top: 1px solid var(--line); padding: 8px 0 4px; }
 .setting-title { font-weight: 500; }
 details { margin-top: 4px; }

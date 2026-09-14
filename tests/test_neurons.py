@@ -7,6 +7,7 @@ from flypong.neurons import ShiuLIF, csr_from_edges
 def make(n, edges, **kw):
     src = [e[0] for e in edges]; dst = [e[1] for e in edges]; w = [e[2] for e in edges]
     indptr, target, weight, source = csr_from_edges(n, src, dst, w)
+    kw.setdefault("depression_u", 0.0)     # most tests check the published dynamics without depression
     return ShiuLIF(n, indptr, target, weight, source, device="cpu", **kw)
 
 
@@ -56,6 +57,31 @@ def test_psp_peak_follows_the_original_model():
             v = float(m.v[1])
             extreme = max(extreme, v) if w > 0 else min(extreme, v)
         assert extreme - (-52.0) == pytest.approx(factor * w, rel=0.06)
+
+
+def test_short_term_depression_weakens_repeated_spikes_and_recovers():
+    def second_psp(u, gap_steps):
+        m = make(2, [(0, 1, 30.0)], depression_u=u, tau_rec=300.0)
+        peaks = []
+        for spike_at in (0, gap_steps):
+            pass
+        # spike 0 at step 0, spike 1 at step gap_steps; measure the arriving g jump each time
+        jumps = []
+        for step in range(gap_steps + 3):
+            drive = torch.tensor([10.0 if step in (0, gap_steps) else 0.0, 0.0])
+            before = float(m.g[1])
+            m(drive)
+            if step in (2, gap_steps + 2):
+                # g_after = (g_before + arriving) * decay_s, so arriving = g_after / decay_s - g_before
+                jumps.append(float(m.g[1]) / m.decay_s - before)
+        return jumps
+    no_std = second_psp(0.0, 6)
+    assert no_std[0] == pytest.approx(30.0, rel=1e-4) and no_std[1] == pytest.approx(30.0, rel=1e-4)
+    std = second_psp(0.2, 6)
+    assert std[0] == pytest.approx(30.0, rel=1e-4)
+    assert 30.0 * 0.8 <= std[1] < 30.0 * 0.83            # 20% used, a little recovered over 6 ms
+    recovered = second_psp(0.2, 1500)
+    assert recovered[1] == pytest.approx(30.0, rel=0.01)   # fully recovered after 1.5 s
 
 
 def test_refractory_neuron_drops_arriving_input():

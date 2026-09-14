@@ -21,6 +21,11 @@ from torch import nn
 
 V_REST, V_RESET, V_THRESH = -52.0, -52.0, -45.0
 TAU_M, TAU_SYN, T_REF, DELAY = 20.0, 5.0, 2.2, 1.8
+# Short-term synaptic depression (Tsodyks-Markram, per presynaptic neuron): each
+# transmitted spike uses a fraction U of the neuron's transmitter, which recovers
+# with time constant TAU_REC. Not in the published model; added because without
+# it any sustained input ignites the network into a self-sustained state.
+STD_U, STD_TAU_REC = 0.2, 300.0
 
 
 def csr_from_edges(n: int, source, target, weight):
@@ -38,7 +43,8 @@ def csr_from_edges(n: int, source, target, weight):
 class ShiuLIF(nn.Module):
     def __init__(self, n: int, indptr, target, weight, source=None, *, device="cpu", dt_ms: float = 1.0,
                  noise_mv: float = 0.0, seed: int = 0, v_rest=V_REST, v_reset=V_RESET, v_thresh=V_THRESH,
-                 tau_m=TAU_M, tau_syn=TAU_SYN, t_ref=T_REF, delay=DELAY):
+                 tau_m=TAU_M, tau_syn=TAU_SYN, t_ref=T_REF, delay=DELAY, depression_u: float = STD_U,
+                 tau_rec: float = STD_TAU_REC):
         super().__init__()
         if n < 1:
             raise ValueError("n must be positive")
@@ -64,6 +70,9 @@ class ShiuLIF(nn.Module):
         self.register_buffer("g", torch.zeros(n, device=dev))
         self.register_buffer("ref", torch.zeros(n, dtype=torch.int32, device=dev))
         self.register_buffer("spikes", torch.zeros(n, dtype=torch.bool, device=dev))
+        self.register_buffer("resource", torch.ones(n, device=dev))   # transmitter available, 0..1
+        self.depression_u = float(depression_u)
+        self.tau_rec = float(tau_rec)
         self.noise_mv = float(noise_mv)
         self.seed = int(seed)
         torch.manual_seed(self.seed)
@@ -85,6 +94,7 @@ class ShiuLIF(nn.Module):
         self.dt = float(dt_ms)
         self.decay_m = math.exp(-self.dt / self.tau_m)
         self.decay_s = math.exp(-self.dt / self.tau_syn)
+        self.recover = 1.0 - math.exp(-self.dt / self.tau_rec)   # fraction of the deficit recovered per step
         self.ref_steps = max(1, round(self.t_ref / self.dt))
         self.delay_steps = max(1, round(self.delay / self.dt))
         # Exact one-step integration of dv'/dt = (g - v')/tau_m with g decaying at
@@ -108,6 +118,11 @@ class ShiuLIF(nn.Module):
             raise ValueError("noise must be finite and nonnegative")
         self.noise_mv = float(noise_mv)
 
+    def set_depression(self, u: float) -> None:
+        if not (0 <= u < 1):
+            raise ValueError("depression fraction must be in [0, 1)")
+        self.depression_u = float(u)
+
     # ----- state -----
     @torch.no_grad()
     def reset(self) -> None:
@@ -115,10 +130,13 @@ class ShiuLIF(nn.Module):
         self.g.zero_()
         self.ref.zero_()
         self.spikes.zero_()
+        self.resource.fill_(1.0)
         self.ring.zero_()
         self.ptr = 0
-        self._pre.zero_()
-        self._last_pos = self._last_pos[:0]
+        # _pre and _last_pos are created under inference mode during forward, so
+        # they are replaced rather than updated in place.
+        self._pre = torch.zeros(self.n, dtype=torch.bool, device=self.device)
+        self._last_pos = torch.zeros(0, dtype=torch.int64, device=self.device)
 
     @property
     def delayed_pre(self) -> torch.Tensor:
@@ -138,6 +156,9 @@ class ShiuLIF(nn.Module):
             raise ValueError("drive must be scalar or one value per neuron")
         pre = self.ring[self.ptr].clone()   # clone: the slot is overwritten at the end of this step
         self._pre = pre
+        # transmitter recovery (short-term depression)
+        if self.depression_u > 0:
+            self.resource.add_(1.0 - self.resource, alpha=self.recover)
         active = torch.nonzero(pre, as_tuple=False).flatten()
         if active.numel():
             starts = self.indptr[active]
@@ -146,13 +167,18 @@ class ShiuLIF(nn.Module):
             if total:
                 offsets = torch.cumsum(counts, 0) - counts
                 pos = torch.repeat_interleave(starts - offsets, counts) + torch.arange(total, device=self.device)
+                arriving_w = self.weight[pos]
+                if self.depression_u > 0:
+                    arriving_w = arriving_w * torch.repeat_interleave(self.resource[active], counts)
                 self._arriving.zero_()
-                self._arriving.index_add_(0, self.target[pos].long(), self.weight[pos])
+                self._arriving.index_add_(0, self.target[pos].long(), arriving_w)
                 self._arriving.masked_fill_(self.ref > 0, 0.0)   # refractory neurons drop arriving input
                 self.g.add_(self._arriving)
                 self._last_pos = pos
             else:
                 self._last_pos = self._last_pos[:0]
+            if self.depression_u > 0:
+                self.resource[active] *= 1.0 - self.depression_u
         else:
             self._last_pos = self._last_pos[:0]
         # membrane update: exact step of dv/dt = (g - (v - v_rest)) / tau_m

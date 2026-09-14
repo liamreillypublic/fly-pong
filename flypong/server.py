@@ -91,10 +91,11 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
     readout = MotorReadout()
     loop = asyncio.get_running_loop()
     learning_info = getattr(brain, "learning_info", lambda: None)()
+    model_info = getattr(brain, "model_info", lambda: None)()
     runtime = request.app["runtime"]
     runtime["driver"] = ws   # a new tab takes over; older tabs are told to reload
     await ws.send_json({"type": "hello", "neurons": brain.n, "device": brain.device,
-                        "defaults": config.defaults(), "learning": learning_info})
+                        "defaults": config.defaults(), "learning": learning_info, "model": model_info})
     async for msg in ws:
         if msg.type != WSMsgType.TEXT:
             continue
@@ -117,24 +118,39 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
                     continue
                 runtime["driver"] = ws
                 params = config.clamp_params(data.get("params"))
-                k = int(params["steps_per_tick"])
+                params["dt_ms"] = config.snap_dt(params["dt_ms"])
+                dt = params["dt_ms"]
+                k = max(1, round(params["steps_per_tick"] / dt))      # steps_per_tick is in brain ms
                 state = parse_state(data)
                 raw_events = data.get("events") or []
                 events = tuple(e for e in raw_events if e in ("return", "miss")) if isinstance(raw_events, list) else ()
                 learning = params["learning_enabled"] >= 0.5
                 rate = params["learning_rate"]
+                punish_reflex = params["punish_reflex"]
                 drive = senses.drive(state, params)
+
+                def run_tick():
+                    configure = getattr(brain, "configure", None)
+                    if configure is not None:
+                        configure(dt_ms=dt, noise_mv=params["noise_mv"], depression_u=params["depression_u"])
+                    return brain.tick(drive, k, events, learning, rate, punish_reflex)
+
                 async with lock:
-                    result = await loop.run_in_executor(
-                        None, lambda: brain.tick(drive, k, events, learning, rate))
+                    result = await loop.run_in_executor(None, run_tick)
                 readout.decay, readout.gain = params["motor_decay"], params["motor_gain"]
-                move = readout.update(result.dn_left, result.dn_right)
+                if params["readout_motor"] >= 0.5:
+                    move = readout.update(result.mn_left, result.mn_right)
+                else:
+                    move = readout.update(result.dn_left, result.dn_right)
                 await ws.send_json({
                     "type": "command", "move": move,
                     "dn": {"left": result.dn_left, "right": result.dn_right},
+                    "mn": {"left": result.mn_left, "right": result.mn_right},
                     "spikes": result.fired_indices.tolist(),
                     "stats": {"total_spikes": result.total_spikes, "wall_ms": round(result.wall_ms, 2),
-                              "brain_ms": k, "params": params, "learning": result.learning},
+                              "brain_ms": round(k * dt, 3), "steps": k,
+                              "spikes_per_step": round(result.total_spikes / k, 1),
+                              "monitors": result.monitors, "params": params, "learning": result.learning},
                 })
             elif kind == "forget":
                 async with lock:

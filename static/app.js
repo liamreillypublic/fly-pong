@@ -7,7 +7,8 @@ const PADDLE_SPEED = 7, BOT_SPEED = 4;
 const LEFT_X = 20, RIGHT_X = W - 20 - PADDLE_W;   // paddle left edges
 const SPEEDUP = 1.03, MAX_SPEED_FACTOR = 2;
 const RECENT_BALLS = 20;
-const SLIDER_DEFAULTS = { "ball-speed": 5, steps: 4, loom: 0.3, retina: 0.3, gain: 0.5, lrate: 0.02 };
+const SLIDER_DEFAULTS = { "ball-speed": 5, steps: 4, loom: 0.3, gain: 0.5, lrate: 0.02,
+                          noise: 0.5, depression: 0.2, light: 0.15, contrast: 1, mb: 0.3 };
 
 // ---------- DOM ----------
 const $ = (id) => document.getElementById(id);
@@ -162,6 +163,7 @@ window.addEventListener("keydown", (e) => {
     e.target.blur();
     if (e.code.startsWith("Arrow") || e.code === "Space") e.preventDefault();
   }
+  if (e.target.tagName === "SELECT") return;
   if (e.code === "Space") { e.preventDefault(); togglePause(); return; }
   if (e.code === "KeyB") { setBot(!game.bot); return; }
   if (e.code === "KeyN") { newGame(); return; }
@@ -194,8 +196,7 @@ const bindSlider = (id, onChange) => {
   el.addEventListener("input", apply); apply();
 };
 bindSlider("ball-speed", (v) => { game.baseSpeed = v; });
-bindSlider("steps", () => {}); bindSlider("loom", () => {}); bindSlider("retina", () => {}); bindSlider("gain", () => {});
-bindSlider("lrate", () => {});
+for (const id of ["steps", "loom", "gain", "lrate", "noise", "depression", "light", "contrast", "mb"]) bindSlider(id, () => {});
 
 for (const btn of document.querySelectorAll(".preset")) {
   btn.addEventListener("click", () => {
@@ -205,6 +206,7 @@ for (const btn of document.querySelectorAll(".preset")) {
 }
 $("reset-sliders").addEventListener("click", () => {
   for (const [id, v] of Object.entries(SLIDER_DEFAULTS)) setSlider(id, v);
+  $("dt").value = "1"; $("shortcut").checked = true; $("readout-motor").checked = false; $("punish").checked = false;
   for (const other of document.querySelectorAll(".preset")) other.classList.remove("active");
 });
 for (const el of document.querySelectorAll("input[type=range]")) el.addEventListener("input", () => {
@@ -252,7 +254,8 @@ let flash = null;              // Float32Array brightness per neuron, 1 -> 0 ove
 let active = [];               // indices with flash > 0
 let legendCounts = [];         // <span> per class
 let history = [];              // { l, r, m } per tick, newest last
-let learnHistory = [];         // { event, rate } per reward/punishment, newest last
+let learnHistory = [];         // { event, rate, rpe } per reward/punishment, newest last
+let modelInfo = null;
 let lastFrameTime = performance.now();
 // `pending` counts requests awaiting a reply (state, reset or forget). A new
 // state is sent only when it is 0, so New game during a rally can never start
@@ -365,9 +368,9 @@ function renderLearnChart() {
   }
   const x0 = LW - learnHistory.length * step, bar = Math.max(1, step - 1);
   for (let i = 0; i < learnHistory.length; i++) {
-    const e = learnHistory[i], x = x0 + i * step;
-    if (e.event === "reward" || e.event === "both") { lctx.fillStyle = "#6bbf7a"; lctx.fillRect(x, mid - half * 0.8, bar, half * 0.8); }
-    if (e.event === "punishment" || e.event === "both") { lctx.fillStyle = "#e05d5d"; lctx.fillRect(x, mid, bar, half * 0.8); }
+    const e = learnHistory[i], x = x0 + i * step, h = half * Math.max(0.08, Math.min(1, Math.abs(e.rpe)));
+    if (e.rpe >= 0) { lctx.fillStyle = "#6bbf7a"; lctx.fillRect(x, mid - h, bar, h); }
+    else { lctx.fillStyle = "#e05d5d"; lctx.fillRect(x, mid, bar, h); }
   }
   lctx.strokeStyle = "rgba(255,255,255,0.9)"; lctx.lineWidth = 1.5; lctx.beginPath();
   for (let i = 0; i < learnHistory.length; i++) {
@@ -383,11 +386,19 @@ function renderLearnChart() {
 function params() {
   return {
     steps_per_tick: parseFloat($("steps").value),
+    dt_ms: parseFloat($("dt").value),
+    noise_mv: parseFloat($("noise").value),
+    depression_u: parseFloat($("depression").value),
     loom_strength: parseFloat($("loom").value),
-    retina_strength: parseFloat($("retina").value),
+    loom_shortcut: $("shortcut").checked ? 1 : 0,
+    light: parseFloat($("light").value),
+    ball_contrast: parseFloat($("contrast").value),
+    mb_strength: parseFloat($("mb").value),
+    readout_motor: $("readout-motor").checked ? 1 : 0,
     motor_gain: parseFloat($("gain").value),
     learning_enabled: $("learning").checked ? 1 : 0,
     learning_rate: parseFloat($("lrate").value),
+    punish_reflex: $("punish").checked ? 1 : 0,
   };
 }
 
@@ -406,7 +417,7 @@ function fmtAge(s) {
 }
 
 function onLearning(L) {
-  $("dopamine").textContent = `PAM ${L.pam} · PPL1 ${L.ppl1}`;
+  $("dopamine").textContent = `PAM ${L.pam} · PPL1 ${L.ppl1} · expects ${Math.round(100 * L.expected)}% returns`;
   const saved = L.saved_ago_s == null ? "not saved yet" : `saved ${Math.round(L.saved_ago_s)} s ago`;
   $("memory").textContent =
     `mushroom body: ${L.mb_changed.toLocaleString()} synapses changed, ${(100 * L.mb_drift).toFixed(1)}% avg · ` +
@@ -414,11 +425,12 @@ function onLearning(L) {
     `rewards ${L.rewards} · punishments ${L.punishments} · age ${fmtAge(L.age_s)} · ${saved}${L.enabled ? "" : " · learning off"}`;
   if (L.event) {
     const badge = $("dopamine-badge");
-    badge.textContent = L.event === "both" ? "reward + punishment" : L.event;
+    const sign = L.rpe >= 0 ? "+" : "";
+    badge.textContent = `${L.event === "both" ? "reward + punishment" : L.event} (${sign}${L.rpe.toFixed(2)})`;
     badge.className = `badge ${L.event === "both" ? "reward" : L.event}`;
     clearTimeout(onLearning.timer);
-    onLearning.timer = setTimeout(() => { badge.textContent = ""; badge.className = "badge"; }, 600);
-    learnHistory.push({ event: L.event, rate: recentRate() ?? 0 });
+    onLearning.timer = setTimeout(() => { badge.textContent = ""; badge.className = "badge"; }, 900);
+    learnHistory.push({ event: L.event, rate: recentRate() ?? 0, rpe: L.rpe });
     if (learnHistory.length > LEARN_EVENTS) learnHistory.shift();
   }
 }
@@ -440,7 +452,19 @@ function onCommand(cmd) {
   ticks += 1;
   const now = performance.now();
   if (now - tickTimer >= 1000) { ticksPerSec = ticks; ticks = 0; tickTimer = now; }
-  $("stats").textContent = `move ${cmd.move.toFixed(2)} · ${ticksPerSec} ticks/s · ${cmd.stats.total_spikes} spikes · ${cmd.stats.wall_ms} ms/tick`;
+  const s = cmd.stats, mon = s.monitors || {};
+  $("stats").textContent = `move ${cmd.move.toFixed(2)} · ${ticksPerSec} ticks/s · ${s.brain_ms} brain ms in ${s.wall_ms} ms · ${s.spikes_per_step} spikes/step`;
+  $("activity").textContent = `activity: motor neurons L/R ${cmd.mn.left}/${cmd.mn.right} · Kenyon cells ${mon.kc ?? 0} · MB output ${mon.mbon ?? 0} · LPLC2 ${mon.lplc2 ?? 0} · LC4 ${mon.lc4 ?? 0} · photoreceptors ${mon.photoreceptors ?? 0}`;
+}
+
+function statusText(msg) {
+  let text = `${msg.neurons.toLocaleString()} neurons on ${msg.device}`;
+  if (msg.model) {
+    text += ` · ${msg.model.name} @ ${msg.model.dt_ms} ms`;
+    if (msg.model.steps_per_s) text += ` · idle ${msg.model.steps_per_s.toLocaleString()} steps/s`;
+  }
+  if (msg.learning) text += ` · ${msg.learning.plastic.toLocaleString()} plastic synapses · ${msg.learning.dopamine_cells} dopamine cells`;
+  return text;
 }
 
 function connect() {
@@ -451,9 +475,8 @@ function connect() {
   ws.onmessage = (event) => {
     const msg = JSON.parse(event.data);
     if (msg.type === "hello") {
-      let text = `${msg.neurons.toLocaleString()} neurons on ${msg.device}`;
-      if (msg.learning) text += ` · ${msg.learning.plastic.toLocaleString()} plastic synapses · ${msg.learning.dopamine_cells} dopamine cells`;
-      $("status").textContent = text;
+      modelInfo = msg.model || null;
+      $("status").textContent = statusText(msg);
     } else if (msg.type === "command") {
       replied(); onCommand(msg); sendState();
     } else if (msg.type === "reset_ok") {

@@ -21,7 +21,7 @@ STRONG = 1.5   # dimensionless drive: 10.5 mV/ms, fires every refractory period
 
 def make():
     indptr, target, weight, source = csr_from_edges(6, [e[0] for e in EDGES], [e[1] for e in EDGES], [e[2] for e in EDGES])
-    model = ShiuLIF(6, indptr, target, weight, source, device="cpu")
+    model = ShiuLIF(6, indptr, target, weight, source, device="cpu", depression_u=0.0)   # test the rule alone
     idx, innervated, reflex = P.select_plastic(source, target, weight, DOP_DST, DOP_CNT, SUPER)
     pam, ppl1 = P.dopamine_cells(TYPES)
     p = P.Plasticity(model, idx, innervated, reflex, DOP_SRC, DOP_DST, DOP_CNT,

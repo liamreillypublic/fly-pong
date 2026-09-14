@@ -14,12 +14,18 @@ class FakeBrain:
         self.ticks = []
         self.unstable = unstable
 
-    def tick(self, drive, k, events=(), learning=True, rate=0.02):
-        self.ticks.append((np.array(drive), k, tuple(events), learning, rate))
+    def tick(self, drive, k, events=(), learning=True, rate=0.02, punish_reflex=0.0):
+        self.ticks.append((np.array(drive), k, tuple(events), learning, rate, punish_reflex))
         if self.unstable:
             raise BrainUnstable("boom")
         return TickResult(np.array([1, 3], np.int64), dn_left=2, dn_right=0, total_spikes=4, wall_ms=1.5,
-                          learning={"fake": True})
+                          learning={"fake": True}, mn_left=0, mn_right=5, monitors={"kc": 7}, steps=k)
+
+    def configure(self, dt_ms=None, noise_mv=None, depression_u=None):
+        self.configured = (dt_ms, noise_mv, depression_u)
+
+    def model_info(self):
+        return {"name": "fake"}
 
     def reset(self):
         self.resets += 1
@@ -123,6 +129,20 @@ async def test_events_reach_the_brain_and_learning_stats_are_echoed(aiohttp_clie
     cmd = await ws.receive_json()
     assert brain.ticks[-1][2] == ("return",) and brain.ticks[-1][3] is False and brain.ticks[-1][4] == 0.05
     assert cmd["stats"]["learning"] == {"fake": True}
+    await ws.close()
+
+
+async def test_model_params_readout_and_monitors(aiohttp_client, tmp_path):
+    _, ws, hello, brain = await connect(aiohttp_client, tmp_path=tmp_path)
+    assert hello["model"] == {"name": "fake"}
+    await ws.send_json(dict(STATE, params={"steps_per_tick": 4, "dt_ms": 0.4, "noise_mv": 0.7,
+                                           "depression_u": 0.1, "readout_motor": 1, "punish_reflex": 1}))
+    cmd = await ws.receive_json()
+    assert brain.configured == (0.5, 0.7, 0.1)                 # dt snapped to 0.5
+    assert brain.ticks[-1][1] == 8 and brain.ticks[-1][5] == 1.0   # 4 brain ms at 0.5 ms steps = 8 steps
+    assert cmd["move"] > 0                                     # motor readout: right 5 vs left 0 -> down
+    assert cmd["mn"] == {"left": 0, "right": 5} and cmd["stats"]["monitors"] == {"kc": 7}
+    assert cmd["stats"]["steps"] == 8 and cmd["stats"]["brain_ms"] == 4.0 and cmd["stats"]["spikes_per_step"] == 0.5
     await ws.close()
 
 

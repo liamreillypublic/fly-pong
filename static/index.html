@@ -42,7 +42,7 @@
     <div class="setting">
       <label>Ball speed <input type="range" id="ball-speed" min="2" max="10" step="0.5" value="5"> <span id="ball-speed-v">5</span></label>
       <details><summary>What is this?</summary>
-        <p>How far the ball travels each frame, in field units (the field is 800 wide). Range 2 to 10, default 5. Every paddle hit adds 3% up to double the base speed, and each serve starts over. The fly's reaction time is fixed by its wiring, about 8 brain milliseconds from seeing the ball to a descending command, so a faster ball gives it less time to line up. Around 3 it returns almost everything; around 8 it loses most rallies.</p>
+        <p>How far the ball travels each frame, in field units (the field is 800 wide). Range 2 to 10, default 5. Every paddle hit adds 3% up to double the base speed, and each serve starts over. The fly's reaction time is fixed by its wiring, about 10 brain milliseconds from seeing the ball to a descending command, so a faster ball gives it less time to line up.</p>
       </details>
     </div>
     <div class="setting">
@@ -58,7 +58,7 @@
         <li><kbd>B</kbd> toggle the bot</li>
         <li><kbd>N</kbd> new game (zeroes the score; the fly keeps what it learned)</li>
       </ul>
-      <p>The game pauses by itself when this tab is hidden, and resumes when you come back.</p>
+      <p>The game pauses by itself when this tab is hidden, and resumes when you come back. Only the newest open tab drives the fly.</p>
     </details>
   </section>
 
@@ -66,59 +66,105 @@
     <canvas id="brain" width="600" height="600"></canvas>
     <div id="legend" class="legend"></div>
     <div class="chart-wrap">
-      <div class="chart-title">Escape neurons, last 10 seconds. <span class="amber">Left side (up)</span> above the line, <span class="blue">right side (down)</span> below, white trace is the paddle command.</div>
+      <div class="chart-title">Escape neurons (DNp types), last 10 seconds. <span class="amber">Left side (up)</span> above the line, <span class="blue">right side (down)</span> below, white trace is the paddle command.</div>
       <canvas id="chart" width="600" height="120"></canvas>
     </div>
     <div class="hud">
-      <div class="bar-row"><span>DN left (up)</span><div class="bar"><div id="bar-left"></div></div><span id="dn-left">0</span></div>
-      <div class="bar-row"><span>DN right (down)</span><div class="bar"><div id="bar-right"></div></div><span id="dn-right">0</span></div>
+      <div class="bar-row"><span>Escape DNs left (up)</span><div class="bar"><div id="bar-left"></div></div><span id="dn-left">0</span></div>
+      <div class="bar-row"><span>Escape DNs right (down)</span><div class="bar"><div id="bar-right"></div></div><span id="dn-right">0</span></div>
       <div id="stats">move 0.00 · 0 ticks/s · 0 spikes</div>
+      <div id="activity" class="muted">activity: waiting for the first tick</div>
     </div>
 
     <div class="learn">
       <div class="learn-line"><strong>Dopamine</strong> <span id="dopamine">PAM 0 · PPL1 0</span> <span id="dopamine-badge" class="badge"></span></div>
       <div class="learn-line muted" id="memory">no learning data yet</div>
-      <div class="chart-title">Rewards <span class="green">up</span>, punishments <span class="red">down</span>, last 120 events; white line is the fly's return rate over its last 20 balls.</div>
+      <div class="chart-title">Rewards <span class="green">up</span>, punishments <span class="red">down</span>, last 120 events, bar height is the prediction error; white line is the fly's return rate over its last 20 balls.</div>
       <canvas id="learn-chart" width="600" height="100"></canvas>
       <div class="controls">
         <label><input type="checkbox" id="learning" checked> Learning (dopamine)</label>
         <label>Learning rate <input type="range" id="lrate" min="0" max="0.2" step="0.005" value="0.02"> <span id="lrate-v">0.02</span></label>
+        <label><input type="checkbox" id="punish"> Punishment reaches the reflex pathway</label>
         <button id="forget">Forget everything</button>
       </div>
       <details><summary>What is this?</summary>
-        <p>Every time the fly returns the ball, its 316 PAM dopamine neurons are stimulated; every time it misses, its 16 PPL1 dopamine neurons are. These are the cells a real fly uses to signal reward and punishment. Their spikes travel down their real axons, rebuilt from the raw synapse counts, to the 8,599 neurons they actually innervate: almost every Kenyon cell and output neuron of the mushroom body, the fly's learning center, plus a few dozen descending neurons.</p>
-        <p>Meanwhile 4.36 million synapses keep an eligibility trace that rises when the sending cell fired just before the receiving cell and fades over 100 brain milliseconds. Each tick, every eligible synapse that received dopamine changes: reward strengthens it, punishment weakens it, scaled by the learning rate. A synapse never changes sign and stays between a tenth and four times its original strength.</p>
-        <p>Two things are ours, not the fly's. A weak diffuse dopamine signal also reaches the visual-projection-to-descending pathway that drives the paddle, because in this simplified model mushroom-body output cannot reach the escape neurons on its own; without it learning could never change play. And reward potentiates while punishment depresses, where the real mushroom body uses depression in both cases with the valence set by which output neuron is affected.</p>
-        <p>Learned weights are saved every minute and on shutdown, and reloaded when the server starts, so the fly keeps its memory across sessions. Forget everything restores the original connectome. The fly cannot learn a new direction of movement, that is fixed by its anatomy; what it can learn is how fast and how hard to react. Watch the return rate line to judge whether it does.</p>
+        <p>Every time the fly returns the ball, its 316 PAM dopamine neurons are stimulated; every time it misses, its 16 PPL1 dopamine neurons are. These are the cells a real fly uses to signal reward and punishment. The strength of each burst is the prediction error: how surprising the outcome was given the fly's recent return rate, so an expected return barely registers and a miss after a long streak is a big signal. Their spikes travel down their real axons, rebuilt from the raw synapse counts, to the 8,599 neurons they actually innervate: almost every Kenyon cell and output neuron of the mushroom body, the fly's learning center, plus a few dozen descending neurons.</p>
+        <p>Meanwhile 4.36 million synapses can change. Every neuron keeps a presynaptic trace that rises when its spikes transmit and fades over 20 ms; when a neuron fires, each plastic synapse onto it gains its sender's trace as eligibility, which fades over 100 ms. Each tick, eligible synapses that received dopamine change: reward strengthens them, punishment weakens them, scaled by the learning rate. A synapse never changes sign and stays between a tenth and four times its original strength.</p>
+        <p>Two things are ours, not the fly's. A weak diffuse reward signal also reaches the visual-to-descending pathway that drives the paddle, because in this model mushroom-body output cannot reach the escape neurons on its own. Punishment reaches that pathway only if you tick the box; with it on, the first version of this page learned to play worse, because every miss weakened the reflex that had just fired. And reward potentiates while punishment depresses, where the real mushroom body depresses in both cases with the valence set by which output neuron is affected.</p>
+        <p>Learned weights are saved every minute and on shutdown, and reloaded when the server starts. Forget everything restores the original connectome. The fly cannot learn a new direction of movement, that is fixed by its anatomy; what it can learn is how fast and how hard to react.</p>
       </details>
     </div>
 
     <div class="setting">
       <label>Brain ms per frame <input type="range" id="steps" min="1" max="16" step="1" value="4"> <span id="steps-v">4</span></label>
       <details><summary>What is this?</summary>
-        <p>How many one-millisecond brain steps run for each game frame. Range 1 to 16, default 4. The whole 166,700-neuron brain runs at roughly 80 steps per second on this Mac's GPU with learning on, so 4 gives about 20 brain updates per second and 16 gives about 5. More steps per frame means the fly gets more thinking time per frame, which sharpens its reactions, but the game updates its command less often. At the default, one second of game time is about 80 milliseconds of brain time.</p>
+        <p>How many brain milliseconds pass for each game frame. Range 1 to 16, default 4. The status line shows how many steps per second this Mac reaches; at 1 ms steps the brain runs faster than real time when idle and around 400 steps per second during play, so 4 gives about 20 to 25 brain updates per second. More brain time per frame sharpens reactions but lowers the update rate.</p>
+      </details>
+    </div>
+    <div class="setting">
+      <label>Brain step
+        <select id="dt"><option value="1">1 ms</option><option value="0.5">0.5 ms</option><option value="0.25">0.25 ms</option></select>
+      </label>
+      <details><summary>What is this?</summary>
+        <p>The integration time step of the neuron model. The published model uses 0.1 ms; this page offers 1, 0.5 and 0.25 ms. The membrane and synapse equations are integrated exactly at any step, so the step mostly changes how finely the 1.8 ms transmission delay and 2.2 ms refractory period are resolved, at the cost of proportionally more compute per brain millisecond.</p>
+      </details>
+    </div>
+    <div class="setting">
+      <label>Spontaneous activity (noise, mV) <input type="range" id="noise" min="0" max="1.5" step="0.05" value="0.5"> <span id="noise-v">0.5</span></label>
+      <details><summary>What is this?</summary>
+        <p>Random membrane current added to every neuron each step, in millivolts per square-root millisecond. A real fly brain is never silent; this is the only source of spontaneous activity here. Measured on this Mac: at 0.5 the brain idles nearly silent (0.01 Hz); at 0.6 to 0.8 it idles at 1 to 1.5 Hz; at 1.0 at about 3 Hz, all realistic. But the escape readout that moves the paddle drowns in that background: the left-right separation is 2.7 to 1 at zero noise, 1.9 to 1 at 0.5, and gone by 1.0. Default 0.5 keeps the fly playable; raise it to see a brain that idles like a real one and plays worse.</p>
+      </details>
+    </div>
+    <div class="setting">
+      <label>Synaptic fatigue <input type="range" id="depression" min="0" max="0.5" step="0.05" value="0.2"> <span id="depression-v">0.2</span></label>
+      <details><summary>What is this?</summary>
+        <p>Short-term synaptic depression: the fraction of a neuron's transmitter each spike uses up, recovering over 300 ms. Real synapses do this. It is not in the published model, and without it this network is supercritical: any sustained input ignites a self-sustained state where the whole brain fires at 10 Hz, including the Kenyon cells that should be almost silent. At 0.2 activity always dies back down when input stops. At 0 you can watch the ignition happen.</p>
       </details>
     </div>
     <div class="setting">
       <label>Looming strength <input type="range" id="loom" min="0" max="1" step="0.05" value="0.3"> <span id="loom-v">0.3</span></label>
       <details><summary>What is this?</summary>
-        <p>The voltage nudge given each step to the looming detectors on the eye facing the ball: 126 LC4 cells and 185 LPLC2 cells, the neurons a real fly uses to notice something rushing at it. The nudge is scaled by how close the ball is and how far it sits above or below the paddle, and cut to a quarter when the ball is moving away. Range 0 to 1, default 0.3. At 0 the fly is blind to the ball and the paddle never moves. High values fire the escape neurons on every approach and can make the paddle overshoot. This is the one input that actually reaches the descending neurons.</p>
+        <p>The drive given to the looming detectors on the eye facing the ball: 126 LC4 cells and 185 LPLC2 cells, the neurons a real fly uses to notice something rushing at it. Scaled by how close the ball is and how far it sits above or below the paddle, and cut to a quarter when the ball is moving away. Range 0 to 1, default 0.3. This is the shortcut that actually moves the paddle: in a real fly the retina would drive these cells, but in this model it cannot (see the light setting).</p>
       </details>
     </div>
     <div class="setting">
-      <label>Retina strength <input type="range" id="retina" min="0" max="1" step="0.05" value="0.3"> <span id="retina-v">0.3</span></label>
+      <label><input type="checkbox" id="shortcut" checked> Looming shortcut on</label>
       <details><summary>What is this?</summary>
-        <p>The voltage nudge given to the fly's first visual neurons, the lamina cells L1, L2 and L3, in the eye columns where the ball's image lands (a 2-column radius, using the real eye-column coordinates from the dataset). You can watch it in the brain view as a small flare in the optic lobe that moves with the ball. Range 0 to 1, default 0.3. In this simplified neuron model the signal spreads through the local motion detectors but never reaches the escape pathway, so this setting changes what you see, not how the fly plays. Set it to 0 to confirm.</p>
+        <p>Untick to make the fly rely on its real eye alone. Measured result: it goes blind. With the shortcut off, the escape neurons fire equally for a ball above or below in every light setting, and the looming detectors never fire from retinal input. The lamina neurons of a real fly are non-spiking graded cells, and a spiking model cannot carry a small patch of retina through them to the lobula. The switch is here so you can confirm it yourself.</p>
+      </details>
+    </div>
+    <div class="setting">
+      <label>Light <input type="range" id="light" min="0" max="1" step="0.05" value="0.15"> <span id="light-v">0.15</span></label>
+      <details><summary>What is this?</summary>
+        <p>Constant drive on the 5,895 photoreceptors that have an eye column (inherited from the lamina cell each one synapses on most; their own cell bodies are in the retina, outside the imaged volume). The ball is painted as a dark spot in the columns it covers, which is the stimulus a real fly's escape circuit responds to. Watch the retina flare in the optic lobe of the brain view. Range 0 to 1, default 0.15; higher values make thousands of photoreceptors fire at their maximum rate and flood the brain with activity without changing play.</p>
+      </details>
+    </div>
+    <div class="setting">
+      <label>Ball contrast <input type="range" id="contrast" min="0" max="1" step="0.05" value="1"> <span id="contrast-v">1</span></label>
+      <details><summary>What is this?</summary>
+        <p>How much darker the ball's columns are than the lit background: 1 is a black ball, 0 makes the ball invisible to the retina. Only affects the photoreceptor pattern, since the retinal pathway does not reach the paddle in this model.</p>
+      </details>
+    </div>
+    <div class="setting">
+      <label>Mushroom-body input <input type="range" id="mb" min="0" max="1" step="0.05" value="0.3"> <span id="mb-v">0.3</span></label>
+      <details><summary>What is this?</summary>
+        <p>Drive on the 252 visual projection neurons that synapse onto the fly's Kenyon cells, on the eye facing the ball, with the same shape as the looming term. This is a real pathway into the fly's learning center, so the mushroom body sees the ball and its synapses can change with dopamine. Whether that changes play is another matter: mushroom-body output does not reach the escape neurons in this model. The activity line shows Kenyon-cell and output-neuron spikes.</p>
+      </details>
+    </div>
+    <div class="setting">
+      <label><input type="checkbox" id="readout-motor"> Read the paddle from motor neurons</label>
+      <details><summary>What is this?</summary>
+        <p>Normally the paddle follows the fly's escape descending neurons (the 320 DNp cells, 160 per side). Tick this to follow the nerve cord's 708 real leg and wing motor neurons instead, one hop closer to a body. Measured result: motor-neuron activity is nearly the same on both sides for a ball above or below, because turning uses both sides of the body, so as a single up-or-down number it barely works. A real body would need the full pattern, which is out of scope here.</p>
       </details>
     </div>
     <div class="setting">
       <label>Motor gain <input type="range" id="gain" min="0" max="5" step="0.1" value="0.5"> <span id="gain-v">0.5</span></label>
       <details><summary>What is this?</summary>
-        <p>Each tick the server counts spikes from the 656 left-side and 648 right-side descending neurons, takes right minus left, and smooths that with a leaky sum that keeps 70% of its value from tick to tick. Motor gain multiplies the smoothed value into a paddle command between -1 (full speed up) and 1 (full speed down). Range 0 to 5, default 0.5. Low values make the fly sluggish; high values make it twitchy and prone to overshooting the ball.</p>
+        <p>Each tick the server counts escape-neuron spikes on the left and right, takes right minus left, and smooths that with a leaky sum that keeps 70% of its value from tick to tick. Motor gain multiplies the smoothed value into a paddle command between -1 (full speed up) and 1 (full speed down). Range 0 to 5, default 0.5. Low values make the fly sluggish; high values make it twitchy and prone to overshooting the ball.</p>
       </details>
     </div>
 
-    <p class="caption"><strong>Real:</strong> 166,700 neurons and 25.6 million connections from the MaleCNS v1.0 connectome, stepping live with state carried between frames, and learning through its own dopamine neurons. The ball is painted onto the fly's lamina (retina) columns and onto its looming detectors (LC4, LPLC2) on the side the ball is on. Left-side descending neurons firing move the paddle up, right-side down. <strong>The shortcuts:</strong> the link from retina image to looming detectors, and the diffuse dopamine reaching the paddle pathway, are computed by this page, because the simplified neuron model cannot carry either through the fly's own circuits.</p>
+    <p class="caption"><strong>Real:</strong> 166,700 neurons and 25.6 million synapses from the MaleCNS v1.0 connectome, run with the published Shiu et al. 2024 neuron model (resting -52 mV, threshold -45 mV, 0.275 mV per synapse, 5 ms synapses, 1.8 ms delays, 2.2 ms refractory period), with histamine, the photoreceptor transmitter, treated as the fast inhibitory transmitter it is, stepping live and learning through its own dopamine neurons. <strong>Ours:</strong> short-term synaptic depression to keep the network from igniting, the looming shortcut because the retinal pathway cannot reach the escape neurons in this model, the diffuse reward signal on the paddle pathway, and the up-or-down readout.</p>
   </section>
 </main>
 <div id="toast" hidden></div>

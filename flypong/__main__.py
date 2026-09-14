@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import argparse
+import time
 
 import numpy as np
 from aiohttp import web
 
 from . import config
+from . import graph as graph_module
 from .brain import FlyBrain
 from .plasticity import Plasticity, build_dopamine_edges, dopamine_cells, load_dopamine_edges, select_plastic
 from .senses import SensoryMap
@@ -18,6 +20,29 @@ UPSTREAM_HELP = """Build the upstream data first:
   .venv/bin/python -m malecns prepare"""
 
 
+def ensure_project_graph() -> int:
+    """Build data/graph.npz (full transmitter table, CSR) if it is missing. Returns 0 or an exit code."""
+    if config.PROJECT_GRAPH_PATH.exists():
+        return 0
+    paths = (config.annotations_path(), config.transmitters_path(), config.raw_edges_path())
+    missing = [p for p in paths if not p.exists()]
+    if missing:
+        print("Missing raw data files:\n  " + "\n  ".join(str(p) for p in missing))
+        print(UPSTREAM_HELP.format(root=config.data_root()))
+        return 1
+    print("Building the project graph with the full transmitter table (about 30 s)...", flush=True)
+    meta = graph_module.build(*paths, config.PROJECT_GRAPH_PATH)
+    print(f"Graph: {meta['neurons']:,} neurons, {meta['edges']:,} edges, "
+          f"{meta['histamine_neurons']:,} histamine neurons now transmit", flush=True)
+    upstream = config.upstream_graph_path()
+    if upstream.exists():
+        with np.load(upstream, allow_pickle=False) as u:
+            if not np.array_equal(u["body_ids"], graph_module.load(config.PROJECT_GRAPH_PATH)["body_ids"]):
+                print("Neuron order differs from the upstream graph; the atlas and dopamine files would be wrong.")
+                return 1
+    return 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Fly Pong server")
     parser.add_argument("--host", default="127.0.0.1")
@@ -26,39 +51,57 @@ def main(argv=None) -> int:
     parser.add_argument("--no-learning", action="store_true", help="Run the fixed connectome without plasticity")
     args = parser.parse_args(argv)
 
-    graph, annotations = config.graph_path(), config.annotations_path()
-    missing = [p for p in (graph, annotations) if not p.exists()]
-    if missing:
-        print("Missing data files:\n  " + "\n  ".join(str(p) for p in missing))
-        print(UPSTREAM_HELP.format(root=config.data_root()))
-        return 1
     if not config.ATLAS_PATH.exists():
         print(f"Missing {config.ATLAS_PATH}. Run: uv run python -m flypong.atlas")
         return 1
+    if not config.annotations_path().exists():
+        print(f"Missing {config.annotations_path()}")
+        print(UPSTREAM_HELP.format(root=config.data_root()))
+        return 1
+    code = ensure_project_graph()
+    if code:
+        return code
+    graph_path = config.PROJECT_GRAPH_PATH
+    defaults = config.defaults()
 
     print("Loading brain...", flush=True)
-    brain = FlyBrain.from_graph(graph, args.device)
+    brain = FlyBrain.from_graph(graph_path, args.device, dt_ms=defaults["dt_ms"], noise_mv=defaults["noise_mv"])
     if brain.device != "mps":
         print("WARNING: running on CPU; expect slow ticks", flush=True)
-    senses = SensoryMap.from_files(graph, annotations)
-    brain.set_readout(senses.dn_left, senses.dn_right)
-    print(f"Brain ready: {brain.n:,} neurons on {brain.device}; "
-          f"descending left {len(senses.dn_left)}, right {len(senses.dn_right)}", flush=True)
+    senses = SensoryMap.from_files(graph_path, config.annotations_path())
+    brain.set_readout(senses.dn_left, senses.dn_right, senses.mn_left, senses.mn_right)
+    brain.set_monitors(**senses.monitors)
+    eyes = senses.eyes
+    print(f"Brain ready: {brain.n:,} neurons on {brain.device}; escape DNs left {len(senses.dn_left)}, "
+          f"right {len(senses.dn_right)}; motor neurons {len(senses.mn_left)}/{len(senses.mn_right)}; "
+          f"photoreceptors with columns {len(eyes['L'].photoreceptors)}/{len(eyes['R'].photoreceptors)}; "
+          f"mushroom-body inputs {len(eyes['L'].mb_vpn)}/{len(eyes['R'].mb_vpn)}", flush=True)
+
+    # speed probe: idle steps per second at the default settings
+    idle = np.zeros(brain.n, np.float32)
+    brain.tick(idle, 20)
+    t0 = time.perf_counter()
+    r = brain.tick(idle, 200)
+    brain.steps_per_s = round(200 / (time.perf_counter() - t0))
+    brain.reset()
+    print(f"Model: {brain.model_info()['name']}, dt {brain.model.dt} ms, noise {brain.model.noise_mv} mV, "
+          f"depression {brain.model.depression_u}; idle {brain.steps_per_s} steps/s, "
+          f"{r.total_spikes / 200:.1f} spikes/step", flush=True)
 
     if not args.no_learning:
-        with np.load(graph, allow_pickle=False) as g:
-            body_ids, source, target, weight, types = g["body_ids"], g["source"], g["target"], g["weight"], g["cell_types"]
+        g = graph_module.load(graph_path)
         if not config.DOPAMINE_PATH.exists():
             raw = config.raw_edges_path()
             if not raw.exists():
                 print(f"Missing {raw}; run the upstream download (see README).")
                 return 1
             print("Building dopamine edges from the raw synapse file (about 10 s)...", flush=True)
-            print(build_dopamine_edges(raw, body_ids, types, config.DOPAMINE_PATH), flush=True)
+            print(build_dopamine_edges(raw, g["body_ids"], g["cell_types"], config.DOPAMINE_PATH), flush=True)
         dop_src, dop_dst, dop_cnt = load_dopamine_edges(config.DOPAMINE_PATH, brain.n)
-        pam, ppl1 = dopamine_cells(types)
+        pam, ppl1 = dopamine_cells(g["cell_types"])
         dop_sign = np.where(np.isin(dop_src, pam), 1.0, -1.0).astype(np.float32)
-        idx, innervated, reflex = select_plastic(source, target, weight, dop_dst, dop_cnt, senses.annotations.superclass)
+        idx, innervated, reflex = select_plastic(g["source"], g["target"], g["weight"], dop_dst, dop_cnt,
+                                                 senses.annotations.superclass)
         brain.attach_plasticity(Plasticity(brain.model, idx, innervated, reflex, dop_src, dop_dst, dop_cnt,
                                            dop_sign, pam, ppl1, brain.graph_sha))
         loaded = brain.load_memory(config.LEARNED_PATH)

@@ -27,10 +27,10 @@ def test_clamp_drops_unknown_and_fills_missing():
 
 
 def test_clamp_ignores_non_numeric_bool_and_nan():
-    out = config.clamp_params({"loom_strength": "high", "motor_gain": True, "retina_strength": math.nan})
+    out = config.clamp_params({"loom_strength": "high", "motor_gain": True, "light": math.nan})
     assert out["loom_strength"] == 0.3
     assert out["motor_gain"] == 0.5
-    assert out["retina_strength"] == 0.3
+    assert out["light"] == 0.15
 
 
 def test_clamp_non_dict_returns_defaults():
