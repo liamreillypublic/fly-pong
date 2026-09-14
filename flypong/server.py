@@ -50,8 +50,11 @@ def parse_state(msg: dict) -> GameState:
 def create_app(brain: BrainLike, senses: SensesLike, static_dir: Path = config.STATIC_DIR) -> web.Application:
     app = web.Application()
     app["brain"], app["senses"], app["lock"] = brain, senses, asyncio.Lock()
+    async def index(request: web.Request) -> web.FileResponse:
+        return web.FileResponse(static_dir / "index.html")
+
     app.router.add_get("/ws", ws_handler)
-    app.router.add_get("/", lambda request: web.FileResponse(static_dir / "index.html"))
+    app.router.add_get("/", index)
     app.router.add_static("/static", static_dir)
     return app
 
