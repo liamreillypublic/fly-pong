@@ -92,6 +92,94 @@ failure. Whether that improves play is a measurement for another session.
 Slow the ball down and the fly returns nearly everything; speed it up and
 its reaction time loses regardless of learning.
 
+## Realism batch (2026-09-14)
+
+Seven changes aimed at narrowing the gap to a real fly brain, each
+measured on the M3 Pro.
+
+1. **Full transmitter table.** The project builds its own graph
+   (`data/graph.npz`, same neuron order as upstream) with histamine, the
+   photoreceptor transmitter, as the fast inhibitory transmitter it is.
+   Mute neurons drop from 11,609 to 3,718; 89,723 photoreceptor synapses
+   now transmit.
+2. **The published neuron model.** Shiu et al. 2024 parameters: rest and
+   reset -52 mV, threshold -45 mV, 20 ms membrane, 5 ms exponential
+   synapses, 0.275 mV per synapse into the synaptic variable, 1.8 ms delay,
+   2.2 ms refractory period, inputs dropped while refractory. Integrated
+   exactly per step, so 1, 0.5 and 0.25 ms steps agree. Event-driven
+   propagation touches only the synapses of neurons that spiked: idle
+   speed is 2,500 steps per second, 2.5x real time, and about 400 to 1,000
+   during play.
+   Two findings on the way: a first draft calibrated each synapse's
+   membrane peak to 0.275 mV, six times the original, and one stimulus
+   ignited the whole brain. And even at the correct strength, sustained
+   input ignites a self-sustained 10 Hz state. Short-term synaptic
+   depression (20% of transmitter per spike, 300 ms recovery, real but not
+   in the published model) stops that: activity dies down when input stops.
+3. **Spontaneous activity.** A noise current. With depression, 0.6 to
+   1.0 mV gives a 1 to 3 Hz idle like a real fly, but the escape readout
+   drowns in it: left-right separation is 2.7:1 at zero noise, 1.9:1 at
+   0.5 mV, gone at 1.0. Default 0.5 mV, near-silent idle, playable.
+4. **Inhibition scaled by 2.** At the published 1x the mushroom body
+   ignites (Kenyon cells at 21 Hz each; real ones fire below 1 Hz) and the
+   escape signal is 1.5:1. At 2x Kenyon cells fire at 0.7 Hz, brain-wide
+   activity during play is about 2 Hz, and the escape signal is 4:1.
+5. **The real eye.** 5,895 photoreceptors inherit an eye column and an eye
+   from the lamina cell they synapse on most (their cell bodies are outside
+   the imaged volume). Constant light with the ball as a dark spot, the
+   stimulus a real fly's escape circuit responds to. Result: it does not
+   reach the escape neurons. With the shortcut off, escape activity is the
+   same for a ball above or below in every light condition, and the looming
+   detectors never fire from retinal input. Real lamina neurons are
+   non-spiking graded cells; a spiking model cannot carry a small patch of
+   retina through them. The shortcut stays on; the switch is on the page.
+6. **Dopamine as prediction error.** Reward and punishment bursts scale
+   with surprise against a running expectation of the fly's return rate.
+   Diffuse punishment on the reflex pathway is off by default (it caused
+   the earlier spiral). Eligibility is now causal: each neuron's
+   presynaptic trace (20 ms) credits the synapses onto a neuron when it
+   fires.
+7. **Mushroom-body input and motor-neuron readout.** The 252 visual
+   projection neurons onto Kenyon cells see the ball, so the fly's
+   learning center participates. The paddle can be read from the 708
+   nerve-cord motor neurons instead of the escape neurons; measured, they
+   fire nearly equally on both sides for a ball above or below (turning
+   uses both sides), so as an up-or-down number it barely works. A physics
+   body was out of scope.
+
+The escape readout itself changed: with the richer model the whole
+descending population fires bilaterally, so the paddle now follows the 320
+DNp cells (160 per side), the giant fiber and its looming-escape partners,
+which stay cleanly one-sided.
+
+### Measured session on the new brain
+
+Same protocol as before (bot, ball speed 5, defaults, single tab, from a
+fresh Forget), on the Shiu model with inhibition x2 and depression:
+
+| Phase | Balls faced | Returned | Synapses changed |
+|---|---|---|---|
+| Original connectome, learning off, 3 min | 35 | 23 (66%) | 0 |
+| Learning on, 5 min (34 rewards, 45 punishments) | 79 | 34 (43%) | mushroom body 1.35 M by 2.1%, reflex pathway 1.19 M by 0.6% |
+| Trained weights frozen, learning off, 3.5 min | 52 | 29 (56%) | same |
+
+Verdict, second time: learning does not improve play, and this time the
+punishment spiral is not the reason (punishment never reached the reflex
+pathway). The changes are simply too broad. With the richer model a return
+is preceded by activity across a million synapses, so reward-driven
+potentiation spreads over the whole pathway and raises excitability
+everywhere, which blurs the left-right escape signal the paddle depends on
+rather than sharpening the reflex that earned the reward. What it would
+take: credit assignment that is sparse in space and tight in time, and a
+paddle readout that normalizes for overall excitability. Both are
+measurable next steps, not fixes applied here.
+
+The untrained fly is also weaker on this brain than on the first one (66%
+against 86%). The first model's normalized weights made the escape
+pathway an almost noise-free relay; the published model with realistic
+activity levels gives a noisier, more lifelike reflex. The page is tuned
+for realism, not for the score.
+
 ## Setup
 
 1. Clone and build the upstream simulator next to this folder:

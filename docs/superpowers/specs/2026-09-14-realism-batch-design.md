@@ -163,6 +163,29 @@ at startup, "delay_steps", "ref_steps"}`. `command.stats` gains
 `spikes_per_step`, `mn`, `learning.expected`, `learning.rpe`, `kc`,
 `mbon`, `lplc2` (spike counts this tick).
 
+## Amendments from measurement (2026-09-14)
+
+- Short-term synaptic depression (Tsodyks-Markram, U = 0.2, 300 ms
+  recovery, per presynaptic neuron) was added to `ShiuLIF`: without it any
+  sustained input ignites a self-sustained 10 Hz state. Exposed as
+  `depression_u` (default 0.2, bounds 0 to 0.5).
+- Inhibitory synapses are scaled by `config.INHIBITION_SCALE = 2.0` at
+  load (CLI `--inhibition`): at 1x the mushroom body ignites (Kenyon
+  cells at 21 Hz) and the escape signal is 1.5:1; at 2x Kenyon cells fire
+  at 0.7 Hz and the signal is 4:1. The memory key includes the scale.
+- The paddle readout uses the DNp escape neurons (320 cells) by side, not
+  all descending neurons: with the richer model the whole descending
+  population fires bilaterally.
+- Photoreceptors inherit their eye from the lamina cell they target; their
+  own soma side is unknown (retina outside the volume). 5,895 get columns.
+- Defaults lowered to realistic firing rates: `loom_strength` 0.15,
+  `light` 0.05, `mb_strength` 0.1, `learning_rate` 0.005; the dopamine
+  trace is clamped to [-1, 1] and the diffuse traces to at most 1.
+- The real eye does not reach the escape neurons (measured); the looming
+  shortcut default stays 1.
+- Motor-neuron readout is bilateral for a ball above or below (measured);
+  offered as a toggle, not the default.
+
 ## Error handling
 
 - Missing project graph: startup builds it (about 60 s) after printing
