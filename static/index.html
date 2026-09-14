@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Fly Pong</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>Fly Pong</h1>
+  <div id="status">connecting…</div>
+</header>
+<main>
+  <section id="game-panel">
+    <canvas id="game" width="800" height="500"></canvas>
+    <div class="scores"><span id="score-left">0</span><span class="sep">:</span><span id="score-right">0</span></div>
+    <div class="controls">
+      <button id="new-game">New game</button>
+      <button id="pause">Pause</button>
+      <label><input type="checkbox" id="bot"> Bot plays left paddle (B)</label>
+      <label>Ball speed <input type="range" id="ball-speed" min="2" max="10" step="0.5" value="5"> <span id="ball-speed-v">5</span></label>
+    </div>
+    <p class="hint">You are the left paddle: W/S or arrow keys. Space pauses. The fly is the right paddle.</p>
+  </section>
+  <section id="brain-panel">
+    <canvas id="brain" width="600" height="600"></canvas>
+    <div class="hud">
+      <div class="bar-row"><span>DN left (up)</span><div class="bar"><div id="bar-left"></div></div><span id="dn-left">0</span></div>
+      <div class="bar-row"><span>DN right (down)</span><div class="bar"><div id="bar-right"></div></div><span id="dn-right">0</span></div>
+      <div id="stats">move 0.00 · 0 ticks/s · 0 spikes</div>
+    </div>
+    <div class="controls">
+      <label>Brain ms per frame <input type="range" id="steps" min="1" max="16" step="1" value="4"> <span id="steps-v">4</span></label>
+      <label>Looming strength <input type="range" id="loom" min="0" max="1" step="0.05" value="0.3"> <span id="loom-v">0.3</span></label>
+      <label>Retina strength <input type="range" id="retina" min="0" max="1" step="0.05" value="0.3"> <span id="retina-v">0.3</span></label>
+      <label>Motor gain <input type="range" id="gain" min="0" max="5" step="0.1" value="0.5"> <span id="gain-v">0.5</span></label>
+    </div>
+    <p class="caption"><strong>Real:</strong> 166,700 neurons and 25.6 million connections from the MaleCNS v1.0 connectome, stepping live with state carried between frames. The ball is painted onto the fly's lamina (retina) columns and onto its looming detectors (LC4, LPLC2) on the side the ball is on. Left-side descending neurons firing move the paddle up, right-side down. <strong>The shortcut:</strong> the link from retina image to looming detectors is computed by this page, because the simplified neuron model cannot carry it through the fly's lobula.</p>
+  </section>
+</main>
+<div id="toast" hidden></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

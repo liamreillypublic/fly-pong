@@ -1,0 +1,27 @@
+:root { color-scheme: dark; --bg: #0d0f14; --panel: #161a23; --fg: #e6e8ef; --muted: #8b90a0; --accent: #f3c454; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, -apple-system, sans-serif; }
+header { display: flex; align-items: baseline; gap: 16px; padding: 12px 20px; border-bottom: 1px solid #262b38; }
+h1 { margin: 0; font-size: 20px; letter-spacing: 0.04em; }
+#status { color: var(--muted); }
+main { display: flex; flex-wrap: wrap; gap: 20px; padding: 20px; }
+section { background: var(--panel); border-radius: 10px; padding: 14px; }
+#game-panel { flex: 1 1 800px; max-width: 840px; }
+#brain-panel { flex: 1 1 600px; max-width: 640px; }
+canvas { display: block; width: 100%; height: auto; background: #05060a; border-radius: 6px; }
+.scores { text-align: center; font-size: 28px; font-weight: 600; margin: 8px 0; }
+.scores .sep { margin: 0 12px; color: var(--muted); }
+.controls { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; margin: 8px 0; }
+.controls label { display: inline-flex; align-items: center; gap: 8px; }
+button { background: #2a3040; color: var(--fg); border: 1px solid #3a4154; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+button:hover { background: #343b4e; }
+input[type=range] { width: 120px; }
+.hint, .caption { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
+.caption { line-height: 1.5; }
+.hud { margin: 10px 0; }
+.bar-row { display: grid; grid-template-columns: 110px 1fr 40px; align-items: center; gap: 8px; margin: 4px 0; }
+.bar { height: 10px; background: #0a0c12; border-radius: 5px; overflow: hidden; }
+.bar div { height: 100%; width: 0; background: var(--accent); transition: width 80ms linear; }
+#bar-right { background: #6bb2f0; }
+#stats { color: var(--muted); font-variant-numeric: tabular-nums; }
+#toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #3a2a2a; color: #ffd7d7; padding: 10px 16px; border-radius: 8px; border: 1px solid #6a3a3a; }
