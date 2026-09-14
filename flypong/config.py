@@ -10,6 +10,12 @@ PROJECT_DIR = PACKAGE_DIR.parent
 STATIC_DIR = PROJECT_DIR / "static"
 ATLAS_PATH = STATIC_DIR / "atlas.bin"
 ANNOTATIONS_FILE = "body-annotations-male-cns-v1.0-minconf-0.5.feather"
+RAW_EDGES_FILE = "connectome-weights-male-cns-v1.0-minconf-0.5.feather"
+DATA_DIR = PROJECT_DIR / "data"
+DOPAMINE_PATH = DATA_DIR / "dopamine.npz"
+LEARNED_PATH = DATA_DIR / "learned.npz"
+DIFFUSE_GAIN = 0.3
+SAVE_INTERVAL_S = 60.0
 
 
 def data_root() -> Path:
@@ -23,6 +29,10 @@ def graph_path() -> Path:
 
 def annotations_path() -> Path:
     return data_root() / "data" / "raw" / ANNOTATIONS_FILE
+
+
+def raw_edges_path() -> Path:
+    return data_root() / "data" / "raw" / RAW_EDGES_FILE
 
 
 @dataclass(frozen=True)
@@ -40,6 +50,8 @@ PARAMS: dict[str, Param] = {
     "motor_decay": Param(0.7, 0.0, 0.99),
     "motor_gain": Param(0.5, 0.0, 5.0),
     "background_drive": Param(0.02, 0.0, 0.1),
+    "learning_enabled": Param(1, 0, 1),
+    "learning_rate": Param(0.02, 0.0, 0.2),
 }
 
 

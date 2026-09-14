@@ -38,6 +38,13 @@ def test_clamp_non_dict_returns_defaults():
     assert config.clamp_params([1, 2]) == config.defaults()
 
 
+def test_learning_params_exist():
+    d = config.defaults()
+    assert d["learning_enabled"] == 1 and d["learning_rate"] == 0.02
+    assert config.clamp_params({"learning_rate": 9})["learning_rate"] == 0.2
+    assert config.DIFFUSE_GAIN == 0.3
+
+
 def test_paths_respect_env_override(monkeypatch, tmp_path):
     monkeypatch.setenv("FLYPONG_DATA", str(tmp_path))
     assert config.graph_path() == tmp_path / "data" / "graph.npz"
