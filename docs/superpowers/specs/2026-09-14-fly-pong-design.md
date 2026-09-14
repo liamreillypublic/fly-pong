@@ -192,9 +192,11 @@ min/max bounds used to validate client parameters.
 **atlas.py.** Reads the annotation file, joins it to graph order by body ID,
 projects `somaLocation` onto its two principal axes (PCA over the neurons that
 have a location), rescales to 0-65535, and writes `static/atlas.bin`:
-a header `{"neurons": N, "classes": [...]}` as length-prefixed UTF-8 JSON,
-then `N` records of `uint16 x, uint16 y, uint8 class_code`; neurons without a
-location get `x = y = 65535`. Class codes index a fixed list of superclass
+a header `{"neurons": N, "classes": [...]}` as a little-endian uint32 length
+followed by UTF-8 JSON padded with spaces to a multiple of 4 bytes, then three
+planar arrays: `x` as uint16[N], `y` as uint16[N], `class_code` as uint8[N];
+neurons without a location get `x = y = 65535`. Both axes are scaled by the
+same factor (the larger span) so the brain's aspect ratio is preserved. Class codes index a fixed list of superclass
 groups: optic lobe, central brain, visual projection, descending, ascending,
 sensory, motor, VNC, other. Invoked once by `python -m flypong.atlas`; the
 server refuses to start without the file and says how to build it.
@@ -229,7 +231,8 @@ responsive; a lock serializes ticks.
 Protocol (JSON text frames):
 
 - Client `{"type":"state","ball":{"x","y","vx","vy"},"paddle":{"y","x"},
-  "field":{"w","h"},"steps":k,"params":{...}}` → server replies
+  "field":{"w","h"},"params":{...}}` where `params.steps_per_tick` is k →
+  server replies
   `{"type":"command","move":m,"dn":{"left":a,"right":b},"spikes":[i,...],
   "stats":{"total_spikes":t,"wall_ms":w,"brain_ms":k}}`.
 - Client `{"type":"reset"}` → server resets brain and readout, replies

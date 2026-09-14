@@ -1,0 +1,29 @@
+[project]
+name = "fly-pong"
+version = "0.1.0"
+description = "Pong played live by a simulation of the complete fruit fly central nervous system (MaleCNS v1.0)"
+requires-python = ">=3.12"
+dependencies = [
+  "torch>=2.14,<2.15",
+  "numpy>=2.2,<3",
+  "pyarrow>=19,<26",
+  "aiohttp>=3.10",
+  "malecns-mps",
+]
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "pytest-aiohttp>=1.1"]
+
+[tool.uv.sources]
+malecns-mps = { path = "../mps-malecns-model" }
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["flypong*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
