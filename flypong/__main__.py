@@ -49,6 +49,8 @@ def main(argv=None) -> int:
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--device", choices=["auto", "mps", "cpu"], default="auto")
     parser.add_argument("--no-learning", action="store_true", help="Run the fixed connectome without plasticity")
+    parser.add_argument("--inhibition", type=float, default=config.INHIBITION_SCALE,
+                        help="Scale factor on inhibitory synapses (default %(default)s; 1 = published weights)")
     args = parser.parse_args(argv)
 
     if not config.ATLAS_PATH.exists():
@@ -65,7 +67,8 @@ def main(argv=None) -> int:
     defaults = config.defaults()
 
     print("Loading brain...", flush=True)
-    brain = FlyBrain.from_graph(graph_path, args.device, dt_ms=defaults["dt_ms"], noise_mv=defaults["noise_mv"])
+    brain = FlyBrain.from_graph(graph_path, args.device, dt_ms=defaults["dt_ms"], noise_mv=defaults["noise_mv"],
+                                inhibition_scale=args.inhibition)
     if brain.device != "mps":
         print("WARNING: running on CPU; expect slow ticks", flush=True)
     senses = SensoryMap.from_files(graph_path, config.annotations_path())
@@ -85,7 +88,7 @@ def main(argv=None) -> int:
     brain.steps_per_s = round(200 / (time.perf_counter() - t0))
     brain.reset()
     print(f"Model: {brain.model_info()['name']}, dt {brain.model.dt} ms, noise {brain.model.noise_mv} mV, "
-          f"depression {brain.model.depression_u}; idle {brain.steps_per_s} steps/s, "
+          f"depression {brain.model.depression_u}, inhibition x{args.inhibition:g}; idle {brain.steps_per_s} steps/s, "
           f"{r.total_spikes / 200:.1f} spikes/step", flush=True)
 
     if not args.no_learning:

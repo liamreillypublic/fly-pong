@@ -54,17 +54,24 @@ class FlyBrain:
         self._monitors: dict[str, torch.Tensor] = {}
 
     @classmethod
-    def from_graph(cls, graph_path: Path, device: str = "auto", dt_ms: float = 1.0, noise_mv: float = 0.0) -> "FlyBrain":
+    def from_graph(cls, graph_path: Path, device: str = "auto", dt_ms: float = 1.0, noise_mv: float = 0.0,
+                   inhibition_scale: float = config.INHIBITION_SCALE) -> "FlyBrain":
         if device not in ("auto", "cpu", "mps"):
             raise ValueError("device must be auto, cpu or mps")
+        if not (inhibition_scale > 0):
+            raise ValueError("inhibition_scale must be positive")
         available = torch.backends.mps.is_available()
         if device == "mps" and not available:
             raise RuntimeError("MPS is unavailable; use --device cpu")
         dev = "mps" if (device != "cpu" and available) else "cpu"
         g = graph_module.load(graph_path)
         n = len(g["body_ids"])
-        model = ShiuLIF(n, g["indptr"], g["target"], g["weight"], g["source"], device=dev, dt_ms=dt_ms, noise_mv=noise_mv)
-        return cls(model, n, g["metadata"], graph_sha=sha256(graph_path))
+        weight = g["weight"].copy()
+        weight[weight < 0] *= inhibition_scale
+        model = ShiuLIF(n, g["indptr"], g["target"], weight, g["source"], device=dev, dt_ms=dt_ms, noise_mv=noise_mv)
+        brain = cls(model, n, g["metadata"], graph_sha=f"{sha256(graph_path)}:inh{inhibition_scale:g}")
+        brain.inhibition_scale = inhibition_scale
+        return brain
 
     @classmethod
     def from_arrays(cls, n: int, source, target, weight, device: str = "cpu", **model_kw) -> "FlyBrain":
@@ -95,7 +102,8 @@ class FlyBrain:
         m = self.model
         return {"name": "shiu-lif", "dt_ms": m.dt, "noise_mv": m.noise_mv, "depression_u": m.depression_u,
                 "delay_steps": m.delay_steps, "ref_steps": m.ref_steps,
-                "psp_peak_factor": round(m.psp_peak_factor, 4), "steps_per_s": getattr(self, "steps_per_s", None)}
+                "psp_peak_factor": round(m.psp_peak_factor, 4), "steps_per_s": getattr(self, "steps_per_s", None),
+                "inhibition_scale": getattr(self, "inhibition_scale", 1.0)}
 
     # ----- learning -----
     def attach_plasticity(self, plasticity) -> None:

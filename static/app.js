@@ -460,7 +460,7 @@ function onCommand(cmd) {
 function statusText(msg) {
   let text = `${msg.neurons.toLocaleString()} neurons on ${msg.device}`;
   if (msg.model) {
-    text += ` · ${msg.model.name} @ ${msg.model.dt_ms} ms`;
+    text += ` · ${msg.model.name} @ ${msg.model.dt_ms} ms · inhibition x${msg.model.inhibition_scale ?? 1}`;
     if (msg.model.steps_per_s) text += ` · idle ${msg.model.steps_per_s.toLocaleString()} steps/s`;
   }
   if (msg.learning) text += ` · ${msg.learning.plastic.toLocaleString()} plastic synapses · ${msg.learning.dopamine_cells} dopamine cells`;

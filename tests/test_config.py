@@ -53,5 +53,9 @@ def test_paths_respect_env_override(monkeypatch, tmp_path):
     assert config.raw_edges_path().name == "connectome-weights-male-cns-v1.0-minconf-0.5.feather"
 
 
+def test_inhibition_scale_default():
+    assert config.INHIBITION_SCALE == 2.0
+
+
 def test_snap_dt():
     assert config.snap_dt(0.9) == 1.0 and config.snap_dt(0.4) == 0.5 and config.snap_dt(0.3) == 0.25

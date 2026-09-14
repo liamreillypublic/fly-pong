@@ -16,6 +16,10 @@ DOPAMINE_PATH = DATA_DIR / "dopamine.npz"
 LEARNED_PATH = DATA_DIR / "learned.npz"
 DIFFUSE_GAIN = 0.3
 SAVE_INTERVAL_S = 60.0
+# Inhibitory synapses are scaled up at load. Measured 2026-09-14: at 1x the
+# mushroom body ignites (Kenyon cells at 21 Hz each) and the escape signal is
+# 1.5:1; at 2x Kenyon cells fire at 0.7 Hz and the escape signal is 4:1.
+INHIBITION_SCALE = 2.0
 
 
 def data_root() -> Path:
