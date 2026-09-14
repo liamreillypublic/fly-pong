@@ -50,6 +50,7 @@ def parse_state(msg: dict) -> GameState:
 def create_app(brain: BrainLike, senses: SensesLike, static_dir: Path = config.STATIC_DIR) -> web.Application:
     app = web.Application()
     app["brain"], app["senses"], app["lock"] = brain, senses, asyncio.Lock()
+    app["runtime"] = {"driver": None}   # mutable after startup, unlike app[...] itself
 
     async def index(request: web.Request) -> web.FileResponse:
         return web.FileResponse(static_dir / "index.html")
@@ -90,7 +91,8 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
     readout = MotorReadout()
     loop = asyncio.get_running_loop()
     learning_info = getattr(brain, "learning_info", lambda: None)()
-    request.app["driver"] = ws   # a new tab takes over; older tabs are told to reload
+    runtime = request.app["runtime"]
+    runtime["driver"] = ws   # a new tab takes over; older tabs are told to reload
     await ws.send_json({"type": "hello", "neurons": brain.n, "device": brain.device,
                         "defaults": config.defaults(), "learning": learning_info})
     async for msg in ws:
@@ -108,12 +110,12 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
                 await ws.send_json({"type": "reset_ok"})
             elif kind == "state":
                 # One brain, one driver: the newest connection controls the fly.
-                driver = request.app.get("driver")
+                driver = runtime["driver"]
                 if driver is not None and driver is not ws and not driver.closed:
                     await ws.send_json({"type": "error", "fatal": True,
                                         "message": "another tab is driving the fly; close it or reload this one to take over"})
                     continue
-                request.app["driver"] = ws
+                runtime["driver"] = ws
                 params = config.clamp_params(data.get("params"))
                 k = int(params["steps_per_tick"])
                 state = parse_state(data)
