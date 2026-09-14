@@ -74,3 +74,28 @@ def test_nonfinite_voltage_raises_unstable(brain):
 
 def test_metadata_and_device(brain):
     assert brain.n == 6 and brain.device == "cpu" and brain.metadata == {}
+
+
+def test_tick_without_plasticity_reports_none(brain):
+    assert brain.tick(drive_first(), k=1).learning is None
+    assert brain.learning_info() is None
+
+
+def test_tick_with_plasticity_learns():
+    from flypong import plasticity as P
+    types = np.array(["LC4", "DNp02", "PAM01", "PPL101"])
+    superclass = np.array(["visual_projection", "descending_neuron", "cb_intrinsic", "cb_intrinsic"])
+    src = np.array([0, 2, 3], np.int32); dst = np.array([1, 1, 1], np.int32); w = np.array([2.0, 0.0, 0.0], np.float32)
+    b = FlyBrain.from_arrays(4, src, dst, w, device="cpu")
+    idx, inn, ref = P.select_plastic(src, dst, w, np.array([1, 1]), np.array([5, 5]), superclass)
+    pam, ppl1 = P.dopamine_cells(types)
+    b.attach_plasticity(P.Plasticity(b.model, idx, inn, ref, np.array([2, 3]), np.array([1, 1]), np.array([5, 5]),
+                                     np.array([1.0, -1.0], np.float32), pam, ppl1, graph_sha=b.graph_sha))
+    assert b.learning_info()["plastic"] == 1
+    d = np.zeros(4, np.float32); d[0] = 1.5
+    b.tick(d, k=12)
+    r = b.tick(d, k=12, events=("return",), rate=0.1)
+    assert r.learning["event"] == "reward" and r.learning["pam"] > 0
+    assert float(b.model.weight[0]) > 2.0
+    b.forget()
+    assert float(b.model.weight[0]) == 2.0

@@ -1,6 +1,8 @@
 """Live wrapper around the upstream ConnectomeLIF model.
 
-State persists across ticks; reset() is the only way to clear it.
+State persists across ticks; reset() is the only way to clear it. An attached
+Plasticity object (see plasticity.py) lets reward and punishment change the
+weights of the fly's own synapses while it plays.
 """
 from __future__ import annotations
 
@@ -11,7 +13,10 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from malecns.data import sha256
 from malecns.model import ConnectomeLIF, resolve_device
+
+from .plasticity import WeightsUnstable
 
 
 class BrainUnstable(RuntimeError):
@@ -25,14 +30,17 @@ class TickResult:
     dn_right: int
     total_spikes: int
     wall_ms: float
+    learning: dict | None = None
 
 
 class FlyBrain:
-    def __init__(self, model: ConnectomeLIF, n: int, metadata: dict | None = None):
+    def __init__(self, model: ConnectomeLIF, n: int, metadata: dict | None = None, graph_sha: str = ""):
         self.model = model
         self.n = n
         self.metadata = metadata or {}
+        self.graph_sha = graph_sha
         self.device = model.device.type   # "mps" or "cpu", never "mps:0"
+        self.plasticity = None
         dev = model.device
         self._fired_any = torch.zeros(n, dtype=torch.bool, device=dev)
         self._dn_left = torch.zeros(0, dtype=torch.int64, device=dev)
@@ -45,7 +53,7 @@ class FlyBrain:
             n = len(g["body_ids"])
             metadata = json.loads(str(g["metadata"]))
             model = ConnectomeLIF(n, g["source"], g["target"], g["weight"], device=str(resolved))
-        return cls(model, n, metadata)
+        return cls(model, n, metadata, graph_sha=sha256(graph_path))
 
     @classmethod
     def from_arrays(cls, n: int, source, target, weight, device: str = "cpu") -> "FlyBrain":
@@ -56,11 +64,32 @@ class FlyBrain:
         self._dn_left = torch.as_tensor(np.asarray(dn_left, dtype=np.int64), device=dev)
         self._dn_right = torch.as_tensor(np.asarray(dn_right, dtype=np.int64), device=dev)
 
+    # ----- learning -----
+    def attach_plasticity(self, plasticity) -> None:
+        self.plasticity = plasticity
+
+    def learning_info(self):
+        return None if self.plasticity is None else self.plasticity.info()
+
+    def forget(self) -> None:
+        if self.plasticity is not None:
+            self.plasticity.forget()
+
+    def save_memory(self, path) -> None:
+        if self.plasticity is not None:
+            self.plasticity.save(path)
+
+    def load_memory(self, path) -> bool:
+        return self.plasticity is not None and self.plasticity.load(path)
+
+    # ----- simulation -----
     def reset(self) -> None:
         self.model.reset()
         self._fired_any.zero_()
+        if self.plasticity is not None:
+            self.plasticity.reset()
 
-    def tick(self, drive: np.ndarray, k: int) -> TickResult:
+    def tick(self, drive: np.ndarray, k: int, events=(), learning: bool = True, rate: float = 0.02) -> TickResult:
         if k < 1:
             raise ValueError("k must be at least 1")
         drive = np.asarray(drive, dtype=np.float32)
@@ -75,9 +104,17 @@ class FlyBrain:
         left = torch.zeros((), dtype=torch.int32, device=dev)
         right = torch.zeros((), dtype=torch.int32, device=dev)
         total = torch.zeros((), dtype=torch.int32, device=dev)
+        p = self.plasticity
+        if p is not None:
+            p.begin_tick(events)
+        prev = self.model.spikes.bool()
         with torch.inference_mode():
             for _ in range(k):
-                fired = self.model(drive_t).bool()
+                extra = None if p is None else p.extra_drive()
+                fired = self.model(drive_t if extra is None else drive_t + extra).bool()
+                if p is not None:
+                    p.step(prev, fired)
+                prev = fired
                 self._fired_any |= fired
                 left += fired[self._dn_left].sum(dtype=torch.int32)
                 right += fired[self._dn_right].sum(dtype=torch.int32)
@@ -86,4 +123,10 @@ class FlyBrain:
             raise BrainUnstable("nonfinite membrane voltage; lower the stimulus strengths")
         fired_idx = torch.nonzero(self._fired_any, as_tuple=False).flatten().cpu().numpy().astype(np.int64)
         wall_ms = (time.perf_counter() - start) * 1000.0
-        return TickResult(fired_idx, int(left.item()), int(right.item()), int(total.item()), wall_ms)
+        learning_stats = None
+        if p is not None:
+            try:
+                learning_stats = p.end_tick(learning, rate, wall_ms / 1000.0)
+            except WeightsUnstable as e:
+                raise BrainUnstable(str(e)) from None
+        return TickResult(fired_idx, int(left.item()), int(right.item()), int(total.item()), wall_ms, learning_stats)
