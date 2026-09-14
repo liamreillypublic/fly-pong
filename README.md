@@ -62,8 +62,17 @@ nearly everything; speed it up and its reaction time loses.
 ## Controls
 
 W/S or arrows move your paddle. Space pauses. B hands your paddle to a bot.
+N starts a new game. First to 7 points wins; the page tracks the fly's
+return rate as you play, and pauses itself when the tab is hidden.
+
 Sliders: ball speed, brain ms per frame, looming strength, retina strength,
-motor gain.
+motor gain. Every setting has a "What is this?" dropdown explaining what it
+changes and which real neurons are involved. Easy, Normal and Hard presets
+set ball speed and brain time together; "Reset sliders" restores defaults.
+
+The brain panel shows a color legend of the nine neuron classes with live
+spike counts per tick, and a ten-second strip chart of left versus right
+escape-neuron spikes with the resulting paddle command.
 
 ## Tests
 

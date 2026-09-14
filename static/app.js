@@ -6,6 +6,8 @@ const PADDLE_W = 12, PADDLE_H = 80, BALL_R = 8;
 const PADDLE_SPEED = 7, BOT_SPEED = 4;
 const LEFT_X = 20, RIGHT_X = W - 20 - PADDLE_W;   // paddle left edges
 const SPEEDUP = 1.03, MAX_SPEED_FACTOR = 2;
+const WIN_SCORE = 7;
+const SLIDER_DEFAULTS = { "ball-speed": 5, steps: 4, loom: 0.3, retina: 0.3, gain: 0.5 };
 
 // ---------- DOM ----------
 const $ = (id) => document.getElementById(id);
@@ -16,10 +18,12 @@ const game = {
   ball: { x: W / 2, y: H / 2, vx: 0, vy: 0 },
   left: { y: H / 2 }, right: { y: H / 2 },        // paddle centers
   score: { left: 0, right: 0 },
-  paused: false, bot: false, baseSpeed: 5, speed: 5,
+  paused: false, over: false, bot: false, baseSpeed: 5, speed: 5,
   flyMove: 0,                                       // latest brain command in [-1, 1]
+  flyReturns: 0, flyMisses: 0,
   keys: new Set(),
 };
+let autoPaused = false;
 
 function setFlyMove(m) { game.flyMove = Math.max(-1, Math.min(1, m)); }
 
@@ -33,11 +37,21 @@ function serve(direction) {
 
 function newGame() {
   game.score.left = 0; game.score.right = 0;
+  game.flyReturns = 0; game.flyMisses = 0;
   game.left.y = H / 2; game.right.y = H / 2;
+  game.over = false;
+  $("banner").hidden = true;
   setFlyMove(0);
   serve(Math.random() < 0.5 ? -1 : 1);
-  updateScores();
+  updateScores(); updateFlyStat();
   if (typeof onNewGame === "function") onNewGame();
+}
+
+function endMatch(winner) {
+  game.over = true;
+  setFlyMove(0);
+  $("banner-text").textContent = winner === "right" ? "Fly wins" : (game.bot ? "Bot wins" : "You win");
+  $("banner").hidden = false;
 }
 
 function clampPaddle(y) { return Math.max(PADDLE_H / 2, Math.min(H - PADDLE_H / 2, y)); }
@@ -78,15 +92,30 @@ function stepPhysics() {
     b.vy = Math.sin(angle) * game.speed;
   };
   if (hit(LEFT_X, game.left.y, b.vx < 0)) { b.x = LEFT_X + PADDLE_W + BALL_R; bounce(game.left.y, 1); }
-  if (hit(RIGHT_X, game.right.y, b.vx > 0)) { b.x = RIGHT_X - BALL_R; bounce(game.right.y, -1); }
+  if (hit(RIGHT_X, game.right.y, b.vx > 0)) {
+    b.x = RIGHT_X - BALL_R; bounce(game.right.y, -1);
+    game.flyReturns += 1; updateFlyStat();
+  }
 
-  if (b.x < -BALL_R) { game.score.right += 1; updateScores(); serve(-1); }
-  if (b.x > W + BALL_R) { game.score.left += 1; updateScores(); serve(1); }
+  if (b.x < -BALL_R) {
+    game.score.right += 1; updateScores();
+    if (game.score.right >= WIN_SCORE) endMatch("right"); else serve(-1);
+  }
+  if (b.x > W + BALL_R) {
+    game.score.left += 1; game.flyMisses += 1; updateScores(); updateFlyStat();
+    if (game.score.left >= WIN_SCORE) endMatch("left"); else serve(1);
+  }
 }
 
 function updateScores() {
   $("score-left").textContent = game.score.left;
   $("score-right").textContent = game.score.right;
+}
+
+function updateFlyStat() {
+  const faced = game.flyReturns + game.flyMisses;
+  const pct = faced ? ` (${Math.round(100 * game.flyReturns / faced)}%)` : "";
+  $("fly-stat").textContent = `Fly returned ${game.flyReturns} of ${faced}${pct}`;
 }
 
 function renderGame() {
@@ -97,6 +126,15 @@ function renderGame() {
   gctx.fillRect(LEFT_X, game.left.y - PADDLE_H / 2, PADDLE_W, PADDLE_H);
   gctx.fillStyle = "#f3c454";
   gctx.fillRect(RIGHT_X, game.right.y - PADDLE_H / 2, PADDLE_W, PADDLE_H);
+  // the fly's current command, drawn as a small arrow beside its paddle
+  if (Math.abs(game.flyMove) > 0.05 && !game.over) {
+    const dir = Math.sign(game.flyMove), len = 10 + 16 * Math.abs(game.flyMove);
+    const x = RIGHT_X - 14, y0 = game.right.y, y1 = y0 + dir * len;
+    gctx.strokeStyle = "#f3c454"; gctx.lineWidth = 2;
+    gctx.beginPath(); gctx.moveTo(x, y0); gctx.lineTo(x, y1);
+    gctx.moveTo(x - 4, y1 - dir * 5); gctx.lineTo(x, y1); gctx.lineTo(x + 4, y1 - dir * 5); gctx.stroke();
+    gctx.lineWidth = 1;
+  }
   gctx.fillStyle = "#ffffff";
   gctx.beginPath(); gctx.arc(game.ball.x, game.ball.y, BALL_R, 0, Math.PI * 2); gctx.fill();
   if (game.paused) {
@@ -117,19 +155,38 @@ function fieldState() {
 
 // ---------- input and controls ----------
 window.addEventListener("keydown", (e) => {
+  if (e.target.tagName === "INPUT" && e.target.type === "range") {
+    // a focused slider must not swallow game keys or move together with the paddle
+    e.target.blur();
+    if (e.code.startsWith("Arrow") || e.code === "Space") e.preventDefault();
+  }
   if (e.code === "Space") { e.preventDefault(); togglePause(); return; }
-  if (e.code === "KeyB") { $("bot").checked = !$("bot").checked; game.bot = $("bot").checked; return; }
+  if (e.code === "KeyB") { setBot(!game.bot); return; }
+  if (e.code === "KeyN") { newGame(); return; }
   game.keys.add(e.code);
 });
 window.addEventListener("keyup", (e) => game.keys.delete(e.code));
-$("bot").addEventListener("change", (e) => { game.bot = e.target.checked; });
+function setBot(on) {
+  game.bot = on; $("bot").checked = on;
+  $("who-left").textContent = on ? "Bot" : "You";
+}
+$("bot").addEventListener("change", (e) => setBot(e.target.checked));
 $("new-game").addEventListener("click", newGame);
+$("rematch").addEventListener("click", newGame);
 $("pause").addEventListener("click", togglePause);
 function togglePause() {
   game.paused = !game.paused;
-  $("pause").textContent = game.paused ? "Resume" : "Pause";
+  $("pause").textContent = game.paused ? "Resume (Space)" : "Pause (Space)";
   if (typeof onPauseChange === "function") onPauseChange();
 }
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { if (!game.paused) { togglePause(); autoPaused = true; } }
+  else if (autoPaused) { autoPaused = false; if (game.paused) togglePause(); }
+});
+
+const setSlider = (id, value) => {
+  const el = $(id); el.value = value; el.dispatchEvent(new Event("input"));
+};
 const bindSlider = (id, onChange) => {
   const el = $(id), out = $(id + "-v");
   const apply = () => { out.textContent = el.value; onChange(parseFloat(el.value)); };
@@ -138,11 +195,37 @@ const bindSlider = (id, onChange) => {
 bindSlider("ball-speed", (v) => { game.baseSpeed = v; });
 bindSlider("steps", () => {}); bindSlider("loom", () => {}); bindSlider("retina", () => {}); bindSlider("gain", () => {});
 
+for (const btn of document.querySelectorAll(".preset")) {
+  btn.addEventListener("click", () => {
+    setSlider("ball-speed", btn.dataset.ball); setSlider("steps", btn.dataset.steps);
+    for (const other of document.querySelectorAll(".preset")) other.classList.toggle("active", other === btn);
+  });
+}
+$("reset-sliders").addEventListener("click", () => {
+  for (const [id, v] of Object.entries(SLIDER_DEFAULTS)) setSlider(id, v);
+  for (const other of document.querySelectorAll(".preset")) other.classList.remove("active");
+});
+for (const el of document.querySelectorAll("input[type=range]")) el.addEventListener("input", () => {
+  // any manual change clears the preset highlight
+  for (const other of document.querySelectorAll(".preset")) other.classList.remove("active");
+});
+
 // ---------- main loop ----------
-function frame() {
-  if (!game.paused) stepPhysics();
+// Physics runs at a fixed 60 steps per second regardless of the display's
+// refresh rate (120 Hz screens must not double the ball speed).
+const PHYSICS_STEP_MS = 1000 / 60;
+let physicsAccumulator = 0, lastPhysicsTime = null, physicsSteps = 0;
+function frame(now) {
+  if (lastPhysicsTime === null) lastPhysicsTime = now;
+  physicsAccumulator += Math.min(now - lastPhysicsTime, 100);   // cap catch-up after a stall
+  lastPhysicsTime = now;
+  while (physicsAccumulator >= PHYSICS_STEP_MS) {
+    physicsAccumulator -= PHYSICS_STEP_MS;
+    if (!game.paused && !game.over) { stepPhysics(); physicsSteps += 1; }
+  }
   renderGame();
   if (typeof renderBrain === "function") renderBrain();
+  if (typeof renderChart === "function") renderChart();
   requestAnimationFrame(frame);
 }
 // newGame() and the loop start at the very end of the file, after every `let` below is initialized.
@@ -152,14 +235,22 @@ function frame() {
 // =====================================================================
 const brainCanvas = $("brain"), bctx = brainCanvas.getContext("2d");
 const BW = brainCanvas.width, BH = brainCanvas.height;
+const chartCanvas = $("chart"), cctx = chartCanvas.getContext("2d");
+const CW = chartCanvas.width, CH = chartCanvas.height;
 const CLASS_COLORS = ["#4a6fa5", "#7b6fd0", "#3aa6b9", "#e8a33d", "#d9764a", "#6bbf7a", "#e05d5d", "#8a8fa8", "#555a66"];
 const FLASH_MS = 150;
+const CHART_TICKS = 220;   // about 10 s at 22 ticks/s
 
 let atlas = null;              // { n, x: Uint16Array, y: Uint16Array, cls: Uint8Array, base: canvas }
 let flash = null;              // Float32Array brightness per neuron, 1 -> 0 over FLASH_MS
 let active = [];               // indices with flash > 0
+let legendCounts = [];         // <span> per class
+let history = [];              // { l, r, m } per tick, newest last
 let lastFrameTime = performance.now();
-let ws = null, inflight = false, ticks = 0, tickTimer = performance.now(), ticksPerSec = 0;
+// `pending` counts requests awaiting a reply (state or reset). A new state is
+// sent only when it is 0, so New game during a rally can never start a second
+// request loop.
+let ws = null, pending = 0, ticks = 0, tickTimer = performance.now(), ticksPerSec = 0;
 
 function toast(message, ms = 3000) {
   const el = $("toast"); el.textContent = message; el.hidden = false;
@@ -179,19 +270,40 @@ async function loadAtlas() {
   const base = document.createElement("canvas"); base.width = BW; base.height = BH;
   const c = base.getContext("2d");
   c.fillStyle = "#05060a"; c.fillRect(0, 0, BW, BH);
-  c.globalAlpha = 0.35;
-  for (let i = 0; i < n; i++) {
-    if (x[i] === header.missing) continue;
-    c.fillStyle = CLASS_COLORS[cls[i]] || "#555";
-    c.fillRect(px(y[i]), py(x[i]), 1, 1);   // axis 0 vertical, axis 1 horizontal (same as renderBrain)
-  }
-  c.globalAlpha = 1;
-  atlas = { n, x, y, cls, base, missing: header.missing };
+  atlas = { n, x, y, cls, base, missing: header.missing, classes: header.classes };
   flash = new Float32Array(n);
+  buildLegend(header.classes);
+  // Paint the 166k base dots in chunks across animation frames so the game
+  // never stalls; the brain visibly fills in over the first second.
+  const CHUNK = 12000;
+  let i = 0;
+  const paint = () => {
+    c.globalAlpha = 0.35;
+    const end = Math.min(n, i + CHUNK);
+    for (; i < end; i++) {
+      if (x[i] === header.missing) continue;
+      c.fillStyle = CLASS_COLORS[cls[i]] || "#555";
+      c.fillRect(px(y[i]), py(x[i]), 1, 1);   // axis 0 vertical, axis 1 horizontal (same as renderBrain)
+    }
+    c.globalAlpha = 1;
+    if (i < n) requestAnimationFrame(paint);
+  };
+  requestAnimationFrame(paint);
 }
 // atlas axis 0 (long axis, brain to nerve cord) runs vertically; axis 1 horizontally.
 function px(v1) { return 20 + (v1 / 65534) * (BW - 40); }
 function py(v0) { return 20 + (v0 / 65534) * (BH - 40); }
+
+function buildLegend(classes) {
+  const legend = $("legend"); legend.innerHTML = ""; legendCounts = [];
+  classes.forEach((name, i) => {
+    const row = document.createElement("div"); row.className = "row";
+    const sw = document.createElement("span"); sw.className = "sw"; sw.style.background = CLASS_COLORS[i] || "#555";
+    const label = document.createElement("span"); label.textContent = name;
+    const count = document.createElement("span"); count.className = "n"; count.textContent = "0";
+    row.append(sw, label, count); legend.append(row); legendCounts.push(count);
+  });
+}
 
 function renderBrain() {
   const now = performance.now(), dt = now - lastFrameTime; lastFrameTime = now;
@@ -212,6 +324,29 @@ function renderBrain() {
   active = keep;
 }
 
+function renderChart() {
+  cctx.fillStyle = "#05060a"; cctx.fillRect(0, 0, CW, CH);
+  const mid = CH / 2, half = mid - 6, step = CW / CHART_TICKS;
+  cctx.strokeStyle = "#262b38"; cctx.beginPath(); cctx.moveTo(0, mid); cctx.lineTo(CW, mid); cctx.stroke();
+  if (!history.length) return;
+  let peak = 3;
+  for (const h of history) peak = Math.max(peak, h.l, h.r);
+  const x0 = CW - history.length * step;
+  for (let i = 0; i < history.length; i++) {
+    const h = history[i], x = x0 + i * step;
+    if (h.l) { cctx.fillStyle = "#f3c454"; cctx.fillRect(x, mid - (h.l / peak) * half, Math.max(1, step - 0.5), (h.l / peak) * half); }
+    if (h.r) { cctx.fillStyle = "#6bb2f0"; cctx.fillRect(x, mid, Math.max(1, step - 0.5), (h.r / peak) * half); }
+  }
+  cctx.strokeStyle = "rgba(255,255,255,0.85)"; cctx.lineWidth = 1.5; cctx.beginPath();
+  for (let i = 0; i < history.length; i++) {
+    const x = x0 + i * step + step / 2, y = mid + history[i].m * half;
+    if (i === 0) cctx.moveTo(x, y); else cctx.lineTo(x, y);
+  }
+  cctx.stroke(); cctx.lineWidth = 1;
+  cctx.fillStyle = "#8b90a0"; cctx.font = "11px system-ui"; cctx.textAlign = "left";
+  cctx.fillText(`peak ${peak} spikes/tick`, 4, 12);
+}
+
 function params() {
   return {
     steps_per_tick: parseFloat($("steps").value),
@@ -222,17 +357,25 @@ function params() {
 }
 
 function sendState() {
-  if (!ws || ws.readyState !== WebSocket.OPEN || inflight || game.paused) return;
-  inflight = true;
+  if (!ws || ws.readyState !== WebSocket.OPEN || pending > 0 || game.paused || game.over) return;
+  pending += 1;
   ws.send(JSON.stringify({ type: "state", ...fieldState(), params: params() }));
 }
+function replied() { pending = Math.max(0, pending - 1); }
 
 function onCommand(cmd) {
   setFlyMove(cmd.move);
   if (flash) for (const i of cmd.spikes) { if (flash[i] <= 0) active.push(i); flash[i] = 1; }
+  if (atlas && legendCounts.length) {
+    const counts = new Array(legendCounts.length).fill(0);
+    for (const i of cmd.spikes) counts[atlas.cls[i]] += 1;
+    counts.forEach((v, c) => { legendCounts[c].textContent = v; });
+  }
   const l = cmd.dn.left, r = cmd.dn.right, top = Math.max(1, l, r);
   $("dn-left").textContent = l; $("dn-right").textContent = r;
   $("bar-left").style.width = `${(l / top) * 100}%`; $("bar-right").style.width = `${(r / top) * 100}%`;
+  history.push({ l, r, m: cmd.move });
+  if (history.length > CHART_TICKS) history.shift();
   ticks += 1;
   const now = performance.now();
   if (now - tickTimer >= 1000) { ticksPerSec = ticks; ticks = 0; tickTimer = now; }
@@ -241,25 +384,25 @@ function onCommand(cmd) {
 
 function connect() {
   ws = new WebSocket(`ws://${location.host}/ws`);
-  ws.onopen = () => { $("status").textContent = "connected"; ws.send(JSON.stringify({ type: "reset" })); };
-  ws.onclose = () => { $("status").textContent = "disconnected, retrying…"; inflight = false; setFlyMove(0); setTimeout(connect, 1500); };
+  ws.onopen = () => { $("status").textContent = "connected"; pending = 1; ws.send(JSON.stringify({ type: "reset" })); };
+  ws.onclose = () => { $("status").textContent = "disconnected, retrying…"; pending = 0; setFlyMove(0); setTimeout(connect, 1500); };
   ws.onerror = () => ws.close();
   ws.onmessage = (event) => {
     const msg = JSON.parse(event.data);
     if (msg.type === "hello") {
       $("status").textContent = `${msg.neurons.toLocaleString()} neurons on ${msg.device}`;
     } else if (msg.type === "command") {
-      inflight = false; onCommand(msg); sendState();
+      replied(); onCommand(msg); sendState();
     } else if (msg.type === "reset_ok") {
-      inflight = false; sendState();
+      replied(); history = []; sendState();
     } else if (msg.type === "error") {
-      inflight = false; toast(msg.message); setFlyMove(0); sendState();
+      replied(); toast(msg.message); setFlyMove(0); sendState();
     }
   };
 }
 
 function onNewGame() {
-  if (ws && ws.readyState === WebSocket.OPEN) { inflight = true; ws.send(JSON.stringify({ type: "reset" })); }
+  if (ws && ws.readyState === WebSocket.OPEN) { pending += 1; ws.send(JSON.stringify({ type: "reset" })); }
 }
 function onPauseChange() { if (!game.paused) sendState(); }
 
