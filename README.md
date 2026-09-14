@@ -66,9 +66,28 @@ in the game drives its Kenyon cells. All of the learning happens on the
 reflex pathway. The fly cannot learn a new direction of movement, which is
 fixed by anatomy; it can only learn how fast and how hard to react.
 
-### Measured
+### Measured (2026-09-14, bot opponent, ball speed 5, default settings)
 
-<!-- RESULTS -->
+One clean session, single tab, from a fresh Forget:
+
+| Phase | Balls faced | Returned | Synapses changed |
+|---|---|---|---|
+| Original connectome, learning off, 3 min | 37 | 32 (86%) | 0 |
+| Learning on, 5 min (37 rewards, 27 punishments) | 64 | 37 (58%) | 24,916, by 7.1% on average |
+| Trained weights frozen, learning off, 3.5 min | 48 | 23 (48%) | 24,916 |
+
+So with this rule the fly learns, and gets worse. The mechanism did exactly
+what it was built to do: every miss weakened the reflex synapses that had
+just fired, which made the next approach slower, which caused another miss.
+A punishment spiral. Rewards could not outrun it because the fly's reaction
+time, not its reflex strength, is what loses rallies at this ball speed.
+
+The obvious fix, not yet applied: let the diffuse signal that reaches the
+paddle pathway carry reward only, and keep punishment where the real PPL1
+axons actually go, the mushroom body. That is arguably more faithful, since
+the diffuse signal was our addition in the first place. It would let the
+reflex strengthen with success (up to the 4x cap) and never be weakened by
+failure. Whether that improves play is a measurement for another session.
 
 Slow the ball down and the fly returns nearly everything; speed it up and
 its reaction time loses regardless of learning.
