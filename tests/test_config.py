@@ -6,7 +6,7 @@ def test_defaults_has_every_param_with_its_default():
     d = config.defaults()
     assert set(d) == set(config.PARAMS)
     assert d["steps_per_tick"] == 4
-    assert d["loom_strength"] == 0.3
+    assert d["loom_strength"] == 0.15
 
 
 def test_clamp_clamps_into_bounds():
@@ -28,9 +28,9 @@ def test_clamp_drops_unknown_and_fills_missing():
 
 def test_clamp_ignores_non_numeric_bool_and_nan():
     out = config.clamp_params({"loom_strength": "high", "motor_gain": True, "light": math.nan})
-    assert out["loom_strength"] == 0.3
+    assert out["loom_strength"] == 0.15
     assert out["motor_gain"] == 0.5
-    assert out["light"] == 0.15
+    assert out["light"] == 0.05
 
 
 def test_clamp_non_dict_returns_defaults():
@@ -40,8 +40,8 @@ def test_clamp_non_dict_returns_defaults():
 
 def test_learning_params_exist():
     d = config.defaults()
-    assert d["learning_enabled"] == 1 and d["learning_rate"] == 0.02
-    assert config.clamp_params({"learning_rate": 9})["learning_rate"] == 0.2
+    assert d["learning_enabled"] == 1 and d["learning_rate"] == 0.005
+    assert config.clamp_params({"learning_rate": 9})["learning_rate"] == 0.1
     assert config.DIFFUSE_GAIN == 0.3
 
 

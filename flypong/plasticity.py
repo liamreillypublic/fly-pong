@@ -217,8 +217,9 @@ class Plasticity:
         self.x.mul_(decay_x).add_(pre_transmitted.float())
         self.D.mul_(decay_d)
         self.D.index_add_(0, self.dop_dst, fired[self.dop_src].float() * self.dop_strength)
-        self.G_plus *= decay_d
-        self.G_minus *= decay_d
+        self.D.clamp_(-1.0, 1.0)            # dopamine saturates: at most one full burst's worth per neuron
+        self.G_plus = min(1.0, self.G_plus * decay_d)
+        self.G_minus = min(1.0, self.G_minus * decay_d)
         post = torch.nonzero(fired, as_tuple=False).flatten()
         if post.numel():
             starts = self.indptr_t[post]

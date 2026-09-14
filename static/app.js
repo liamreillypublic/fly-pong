@@ -7,8 +7,8 @@ const PADDLE_SPEED = 7, BOT_SPEED = 4;
 const LEFT_X = 20, RIGHT_X = W - 20 - PADDLE_W;   // paddle left edges
 const SPEEDUP = 1.03, MAX_SPEED_FACTOR = 2;
 const RECENT_BALLS = 20;
-const SLIDER_DEFAULTS = { "ball-speed": 5, steps: 4, loom: 0.3, gain: 0.5, lrate: 0.02,
-                          noise: 0.5, depression: 0.2, light: 0.15, contrast: 1, mb: 0.3 };
+const SLIDER_DEFAULTS = { "ball-speed": 5, steps: 4, loom: 0.15, gain: 0.5, lrate: 0.005,
+                          noise: 0.5, depression: 0.2, light: 0.05, contrast: 1, mb: 0.1 };
 
 // ---------- DOM ----------
 const $ = (id) => document.getElementById(id);

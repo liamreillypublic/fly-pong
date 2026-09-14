@@ -89,19 +89,19 @@ def test_dark_spot_respects_radius_and_far_column(senses):
 
 
 def test_looming_shortcut_can_be_switched_off(senses):
-    on = senses.drive(state(0.0), P(loom_shortcut=1, light=0.0, mb_strength=0.0))
-    off = senses.drive(state(0.0), P(loom_shortcut=0, light=0.0, mb_strength=0.0))
+    on = senses.drive(state(0.0), P(loom_shortcut=1, loom_strength=0.3, light=0.0, mb_strength=0.0))
+    off = senses.drive(state(0.0), P(loom_shortcut=0, loom_strength=0.3, light=0.0, mb_strength=0.0))
     assert on[0] == pytest.approx(BG + 0.3) and on[2] == pytest.approx(BG + 0.3)
     assert off[0] == pytest.approx(BG) and off[2] == pytest.approx(BG)
     assert on[1] == pytest.approx(BG) and on[3] == pytest.approx(BG)
 
 
 def test_looming_scales_with_proximity_offset_and_approach(senses):
-    half = senses.drive(state(125.0, ball_x=388.0), P(light=0.0))     # dy=-0.5, proximity=0.5
+    half = senses.drive(state(125.0, ball_x=388.0), P(light=0.0, loom_strength=0.3))     # dy=-0.5, proximity=0.5
     assert half[0] == pytest.approx(BG + 0.3 * 0.5 * 0.5)
-    level = senses.drive(state(250.0), P(light=0.0))
+    level = senses.drive(state(250.0), P(light=0.0, loom_strength=0.3))
     assert level[[0, 1, 2, 3]].tolist() == pytest.approx([BG] * 4)
-    receding = senses.drive(state(0.0, vx=-5.0), P(light=0.0))
+    receding = senses.drive(state(0.0, vx=-5.0), P(light=0.0, loom_strength=0.3))
     assert receding[0] == pytest.approx(BG + 0.3 * 0.25)
 
 

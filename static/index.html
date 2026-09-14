@@ -83,7 +83,7 @@
       <canvas id="learn-chart" width="600" height="100"></canvas>
       <div class="controls">
         <label><input type="checkbox" id="learning" checked> Learning (dopamine)</label>
-        <label>Learning rate <input type="range" id="lrate" min="0" max="0.2" step="0.005" value="0.02"> <span id="lrate-v">0.02</span></label>
+        <label>Learning rate <input type="range" id="lrate" min="0" max="0.1" step="0.001" value="0.005"> <span id="lrate-v">0.005</span></label>
         <label><input type="checkbox" id="punish"> Punishment reaches the reflex pathway</label>
         <button id="forget">Forget everything</button>
       </div>
@@ -122,7 +122,7 @@
       </details>
     </div>
     <div class="setting">
-      <label>Looming strength <input type="range" id="loom" min="0" max="1" step="0.05" value="0.3"> <span id="loom-v">0.3</span></label>
+      <label>Looming strength <input type="range" id="loom" min="0" max="1" step="0.05" value="0.15"> <span id="loom-v">0.15</span></label>
       <details><summary>What is this?</summary>
         <p>The drive given to the looming detectors on the eye facing the ball: 126 LC4 cells and 185 LPLC2 cells, the neurons a real fly uses to notice something rushing at it. Scaled by how close the ball is and how far it sits above or below the paddle, and cut to a quarter when the ball is moving away. Range 0 to 1, default 0.3. This is the shortcut that actually moves the paddle: in a real fly the retina would drive these cells, but in this model it cannot (see the light setting).</p>
       </details>
@@ -134,7 +134,7 @@
       </details>
     </div>
     <div class="setting">
-      <label>Light <input type="range" id="light" min="0" max="1" step="0.05" value="0.15"> <span id="light-v">0.15</span></label>
+      <label>Light <input type="range" id="light" min="0" max="1" step="0.05" value="0.05"> <span id="light-v">0.05</span></label>
       <details><summary>What is this?</summary>
         <p>Constant drive on the 5,895 photoreceptors that have an eye column (inherited from the lamina cell each one synapses on most; their own cell bodies are in the retina, outside the imaged volume). The ball is painted as a dark spot in the columns it covers, which is the stimulus a real fly's escape circuit responds to. Watch the retina flare in the optic lobe of the brain view. Range 0 to 1, default 0.15; higher values make thousands of photoreceptors fire at their maximum rate and flood the brain with activity without changing play.</p>
       </details>
@@ -146,7 +146,7 @@
       </details>
     </div>
     <div class="setting">
-      <label>Mushroom-body input <input type="range" id="mb" min="0" max="1" step="0.05" value="0.3"> <span id="mb-v">0.3</span></label>
+      <label>Mushroom-body input <input type="range" id="mb" min="0" max="1" step="0.05" value="0.1"> <span id="mb-v">0.1</span></label>
       <details><summary>What is this?</summary>
         <p>Drive on the 252 visual projection neurons that synapse onto the fly's Kenyon cells, on the eye facing the ball, with the same shape as the looming term. This is a real pathway into the fly's learning center, so the mushroom body sees the ball and its synapses can change with dopamine. Whether that changes play is another matter: mushroom-body output does not reach the escape neurons in this model. The activity line shows Kenyon-cell and output-neuron spikes.</p>
       </details>
