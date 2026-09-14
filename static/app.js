@@ -6,8 +6,8 @@ const PADDLE_W = 12, PADDLE_H = 80, BALL_R = 8;
 const PADDLE_SPEED = 7, BOT_SPEED = 4;
 const LEFT_X = 20, RIGHT_X = W - 20 - PADDLE_W;   // paddle left edges
 const SPEEDUP = 1.03, MAX_SPEED_FACTOR = 2;
-const WIN_SCORE = 7;
-const SLIDER_DEFAULTS = { "ball-speed": 5, steps: 4, loom: 0.3, retina: 0.3, gain: 0.5 };
+const RECENT_BALLS = 20;
+const SLIDER_DEFAULTS = { "ball-speed": 5, steps: 4, loom: 0.3, retina: 0.3, gain: 0.5, lrate: 0.02 };
 
 // ---------- DOM ----------
 const $ = (id) => document.getElementById(id);
@@ -18,9 +18,11 @@ const game = {
   ball: { x: W / 2, y: H / 2, vx: 0, vy: 0 },
   left: { y: H / 2 }, right: { y: H / 2 },        // paddle centers
   score: { left: 0, right: 0 },
-  paused: false, over: false, bot: false, baseSpeed: 5, speed: 5,
+  paused: false, bot: false, baseSpeed: 5, speed: 5,
   flyMove: 0,                                       // latest brain command in [-1, 1]
   flyReturns: 0, flyMisses: 0,
+  recent: [],                                       // 1 = returned, 0 = missed, last RECENT_BALLS
+  pendingEvents: [],                                // "return" / "miss" since the last state message
   keys: new Set(),
 };
 let autoPaused = false;
@@ -37,21 +39,18 @@ function serve(direction) {
 
 function newGame() {
   game.score.left = 0; game.score.right = 0;
-  game.flyReturns = 0; game.flyMisses = 0;
+  game.flyReturns = 0; game.flyMisses = 0; game.recent = [];
   game.left.y = H / 2; game.right.y = H / 2;
-  game.over = false;
-  $("banner").hidden = true;
   setFlyMove(0);
   serve(Math.random() < 0.5 ? -1 : 1);
   updateScores(); updateFlyStat();
   if (typeof onNewGame === "function") onNewGame();
 }
 
-function endMatch(winner) {
-  game.over = true;
-  setFlyMove(0);
-  $("banner-text").textContent = winner === "right" ? "Fly wins" : (game.bot ? "Bot wins" : "You win");
-  $("banner").hidden = false;
+function recordBall(returned) {
+  game.recent.push(returned ? 1 : 0);
+  if (game.recent.length > RECENT_BALLS) game.recent.shift();
+  game.pendingEvents.push(returned ? "return" : "miss");
 }
 
 function clampPaddle(y) { return Math.max(PADDLE_H / 2, Math.min(H - PADDLE_H / 2, y)); }
@@ -94,16 +93,13 @@ function stepPhysics() {
   if (hit(LEFT_X, game.left.y, b.vx < 0)) { b.x = LEFT_X + PADDLE_W + BALL_R; bounce(game.left.y, 1); }
   if (hit(RIGHT_X, game.right.y, b.vx > 0)) {
     b.x = RIGHT_X - BALL_R; bounce(game.right.y, -1);
-    game.flyReturns += 1; updateFlyStat();
+    game.flyReturns += 1; recordBall(true); updateFlyStat();
   }
 
-  if (b.x < -BALL_R) {
-    game.score.right += 1; updateScores();
-    if (game.score.right >= WIN_SCORE) endMatch("right"); else serve(-1);
-  }
+  if (b.x < -BALL_R) { game.score.right += 1; updateScores(); serve(-1); }
   if (b.x > W + BALL_R) {
-    game.score.left += 1; game.flyMisses += 1; updateScores(); updateFlyStat();
-    if (game.score.left >= WIN_SCORE) endMatch("left"); else serve(1);
+    game.score.left += 1; game.flyMisses += 1; recordBall(false);
+    updateScores(); updateFlyStat(); serve(1);
   }
 }
 
@@ -112,10 +108,16 @@ function updateScores() {
   $("score-right").textContent = game.score.right;
 }
 
+function recentRate() {
+  return game.recent.length ? game.recent.reduce((a, b) => a + b, 0) / game.recent.length : null;
+}
+
 function updateFlyStat() {
   const faced = game.flyReturns + game.flyMisses;
   const pct = faced ? ` (${Math.round(100 * game.flyReturns / faced)}%)` : "";
-  $("fly-stat").textContent = `Fly returned ${game.flyReturns} of ${faced}${pct}`;
+  const r = recentRate();
+  const recent = r === null ? "–" : `${Math.round(100 * r)}%`;
+  $("fly-stat").textContent = `Fly returned ${game.flyReturns} of ${faced}${pct} · last ${game.recent.length || RECENT_BALLS}: ${recent}`;
 }
 
 function renderGame() {
@@ -127,7 +129,7 @@ function renderGame() {
   gctx.fillStyle = "#f3c454";
   gctx.fillRect(RIGHT_X, game.right.y - PADDLE_H / 2, PADDLE_W, PADDLE_H);
   // the fly's current command, drawn as a small arrow beside its paddle
-  if (Math.abs(game.flyMove) > 0.05 && !game.over) {
+  if (Math.abs(game.flyMove) > 0.05) {
     const dir = Math.sign(game.flyMove), len = 10 + 16 * Math.abs(game.flyMove);
     const x = RIGHT_X - 14, y0 = game.right.y, y1 = y0 + dir * len;
     gctx.strokeStyle = "#f3c454"; gctx.lineWidth = 2;
@@ -172,7 +174,6 @@ function setBot(on) {
 }
 $("bot").addEventListener("change", (e) => setBot(e.target.checked));
 $("new-game").addEventListener("click", newGame);
-$("rematch").addEventListener("click", newGame);
 $("pause").addEventListener("click", togglePause);
 function togglePause() {
   game.paused = !game.paused;
@@ -194,6 +195,7 @@ const bindSlider = (id, onChange) => {
 };
 bindSlider("ball-speed", (v) => { game.baseSpeed = v; });
 bindSlider("steps", () => {}); bindSlider("loom", () => {}); bindSlider("retina", () => {}); bindSlider("gain", () => {});
+bindSlider("lrate", () => {});
 
 for (const btn of document.querySelectorAll(".preset")) {
   btn.addEventListener("click", () => {
@@ -221,11 +223,12 @@ function frame(now) {
   lastPhysicsTime = now;
   while (physicsAccumulator >= PHYSICS_STEP_MS) {
     physicsAccumulator -= PHYSICS_STEP_MS;
-    if (!game.paused && !game.over) { stepPhysics(); physicsSteps += 1; }
+    if (!game.paused) { stepPhysics(); physicsSteps += 1; }
   }
   renderGame();
   if (typeof renderBrain === "function") renderBrain();
   if (typeof renderChart === "function") renderChart();
+  if (typeof renderLearnChart === "function") renderLearnChart();
   requestAnimationFrame(frame);
 }
 // newGame() and the loop start at the very end of the file, after every `let` below is initialized.
@@ -237,19 +240,23 @@ const brainCanvas = $("brain"), bctx = brainCanvas.getContext("2d");
 const BW = brainCanvas.width, BH = brainCanvas.height;
 const chartCanvas = $("chart"), cctx = chartCanvas.getContext("2d");
 const CW = chartCanvas.width, CH = chartCanvas.height;
+const learnCanvas = $("learn-chart"), lctx = learnCanvas.getContext("2d");
+const LW = learnCanvas.width, LH = learnCanvas.height;
 const CLASS_COLORS = ["#4a6fa5", "#7b6fd0", "#3aa6b9", "#e8a33d", "#d9764a", "#6bbf7a", "#e05d5d", "#8a8fa8", "#555a66"];
 const FLASH_MS = 150;
 const CHART_TICKS = 220;   // about 10 s at 22 ticks/s
+const LEARN_EVENTS = 120;
 
 let atlas = null;              // { n, x: Uint16Array, y: Uint16Array, cls: Uint8Array, base: canvas }
 let flash = null;              // Float32Array brightness per neuron, 1 -> 0 over FLASH_MS
 let active = [];               // indices with flash > 0
 let legendCounts = [];         // <span> per class
 let history = [];              // { l, r, m } per tick, newest last
+let learnHistory = [];         // { event, rate } per reward/punishment, newest last
 let lastFrameTime = performance.now();
-// `pending` counts requests awaiting a reply (state or reset). A new state is
-// sent only when it is 0, so New game during a rally can never start a second
-// request loop.
+// `pending` counts requests awaiting a reply (state, reset or forget). A new
+// state is sent only when it is 0, so New game during a rally can never start
+// a second request loop.
 let ws = null, pending = 0, ticks = 0, tickTimer = performance.now(), ticksPerSec = 0;
 
 function toast(message, ms = 3000) {
@@ -347,21 +354,74 @@ function renderChart() {
   cctx.fillText(`peak ${peak} spikes/tick`, 4, 12);
 }
 
+function renderLearnChart() {
+  lctx.fillStyle = "#05060a"; lctx.fillRect(0, 0, LW, LH);
+  const mid = LH / 2, half = mid - 6, step = LW / LEARN_EVENTS;
+  lctx.strokeStyle = "#262b38"; lctx.beginPath(); lctx.moveTo(0, mid); lctx.lineTo(LW, mid); lctx.stroke();
+  if (!learnHistory.length) {
+    lctx.fillStyle = "#8b90a0"; lctx.font = "11px system-ui"; lctx.textAlign = "left";
+    lctx.fillText("waiting for the first return or miss", 4, 12);
+    return;
+  }
+  const x0 = LW - learnHistory.length * step, bar = Math.max(1, step - 1);
+  for (let i = 0; i < learnHistory.length; i++) {
+    const e = learnHistory[i], x = x0 + i * step;
+    if (e.event === "reward" || e.event === "both") { lctx.fillStyle = "#6bbf7a"; lctx.fillRect(x, mid - half * 0.8, bar, half * 0.8); }
+    if (e.event === "punishment" || e.event === "both") { lctx.fillStyle = "#e05d5d"; lctx.fillRect(x, mid, bar, half * 0.8); }
+  }
+  lctx.strokeStyle = "rgba(255,255,255,0.9)"; lctx.lineWidth = 1.5; lctx.beginPath();
+  for (let i = 0; i < learnHistory.length; i++) {
+    const x = x0 + i * step + step / 2, y = LH - 4 - learnHistory[i].rate * (LH - 8);
+    if (i === 0) lctx.moveTo(x, y); else lctx.lineTo(x, y);
+  }
+  lctx.stroke(); lctx.lineWidth = 1;
+  const last = learnHistory[learnHistory.length - 1];
+  lctx.fillStyle = "#8b90a0"; lctx.font = "11px system-ui"; lctx.textAlign = "left";
+  lctx.fillText(`return rate ${Math.round(last.rate * 100)}%`, 4, 12);
+}
+
 function params() {
   return {
     steps_per_tick: parseFloat($("steps").value),
     loom_strength: parseFloat($("loom").value),
     retina_strength: parseFloat($("retina").value),
     motor_gain: parseFloat($("gain").value),
+    learning_enabled: $("learning").checked ? 1 : 0,
+    learning_rate: parseFloat($("lrate").value),
   };
 }
 
 function sendState() {
-  if (!ws || ws.readyState !== WebSocket.OPEN || pending > 0 || game.paused || game.over) return;
+  if (!ws || ws.readyState !== WebSocket.OPEN || pending > 0 || game.paused) return;
   pending += 1;
-  ws.send(JSON.stringify({ type: "state", ...fieldState(), params: params() }));
+  ws.send(JSON.stringify({ type: "state", ...fieldState(), events: game.pendingEvents.splice(0), params: params() }));
 }
 function replied() { pending = Math.max(0, pending - 1); }
+
+function fmtAge(s) {
+  s = Math.round(s);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  if (h) return `${h}h ${String(m).padStart(2, "0")}m`;
+  return m ? `${m}m ${String(sec).padStart(2, "0")}s` : `${sec}s`;
+}
+
+function onLearning(L) {
+  $("dopamine").textContent = `PAM ${L.pam} · PPL1 ${L.ppl1}`;
+  const saved = L.saved_ago_s == null ? "not saved yet" : `saved ${Math.round(L.saved_ago_s)} s ago`;
+  $("memory").textContent =
+    `mushroom body: ${L.mb_changed.toLocaleString()} synapses changed, ${(100 * L.mb_drift).toFixed(1)}% avg · ` +
+    `reflex pathway: ${L.reflex_changed.toLocaleString()} changed, ${(100 * L.reflex_drift).toFixed(1)}% avg · ` +
+    `rewards ${L.rewards} · punishments ${L.punishments} · age ${fmtAge(L.age_s)} · ${saved}${L.enabled ? "" : " · learning off"}`;
+  if (L.event) {
+    const badge = $("dopamine-badge");
+    badge.textContent = L.event === "both" ? "reward + punishment" : L.event;
+    badge.className = `badge ${L.event === "both" ? "reward" : L.event}`;
+    clearTimeout(onLearning.timer);
+    onLearning.timer = setTimeout(() => { badge.textContent = ""; badge.className = "badge"; }, 600);
+    learnHistory.push({ event: L.event, rate: recentRate() ?? 0 });
+    if (learnHistory.length > LEARN_EVENTS) learnHistory.shift();
+  }
+}
 
 function onCommand(cmd) {
   setFlyMove(cmd.move);
@@ -376,6 +436,7 @@ function onCommand(cmd) {
   $("bar-left").style.width = `${(l / top) * 100}%`; $("bar-right").style.width = `${(r / top) * 100}%`;
   history.push({ l, r, m: cmd.move });
   if (history.length > CHART_TICKS) history.shift();
+  if (cmd.stats.learning) onLearning(cmd.stats.learning);
   ticks += 1;
   const now = performance.now();
   if (now - tickTimer >= 1000) { ticksPerSec = ticks; ticks = 0; tickTimer = now; }
@@ -390,11 +451,15 @@ function connect() {
   ws.onmessage = (event) => {
     const msg = JSON.parse(event.data);
     if (msg.type === "hello") {
-      $("status").textContent = `${msg.neurons.toLocaleString()} neurons on ${msg.device}`;
+      let text = `${msg.neurons.toLocaleString()} neurons on ${msg.device}`;
+      if (msg.learning) text += ` · ${msg.learning.plastic.toLocaleString()} plastic synapses · ${msg.learning.dopamine_cells} dopamine cells`;
+      $("status").textContent = text;
     } else if (msg.type === "command") {
       replied(); onCommand(msg); sendState();
     } else if (msg.type === "reset_ok") {
       replied(); history = []; sendState();
+    } else if (msg.type === "forget_ok") {
+      replied(); learnHistory = []; toast("The fly forgot everything and is back to the original connectome."); sendState();
     } else if (msg.type === "error") {
       replied(); toast(msg.message); setFlyMove(0); sendState();
     }
@@ -405,6 +470,13 @@ function onNewGame() {
   if (ws && ws.readyState === WebSocket.OPEN) { pending += 1; ws.send(JSON.stringify({ type: "reset" })); }
 }
 function onPauseChange() { if (!game.paused) sendState(); }
+
+$("forget").addEventListener("click", () => {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  if (!confirm("Erase everything the fly has learned and restore the original connectome?")) return;
+  pending += 1;
+  ws.send(JSON.stringify({ type: "forget" }));
+});
 
 loadAtlas().catch((e) => toast(`atlas failed: ${e.message}`));
 connect();

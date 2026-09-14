@@ -23,10 +23,6 @@
   <section id="game-panel">
     <div class="canvas-wrap">
       <canvas id="game" width="800" height="500"></canvas>
-      <div id="banner" hidden>
-        <div id="banner-text">Fly wins</div>
-        <button id="rematch">Rematch</button>
-      </div>
     </div>
     <div class="scores">
       <span class="who" id="who-left">You</span>
@@ -34,9 +30,9 @@
       <span class="who">Fly</span>
     </div>
     <div class="statline">
-      <span id="fly-stat">Fly returned 0 of 0</span>
+      <span id="fly-stat">Fly returned 0 of 0 · last 20: –</span>
       <span class="sep">·</span>
-      <span>First to <span id="win-score">7</span> wins</span>
+      <span>Endless play</span>
     </div>
     <div class="controls">
       <button id="new-game">New game (N)</button>
@@ -52,7 +48,7 @@
     <div class="setting">
       <span class="setting-title">Bot</span>
       <details><summary>What is this?</summary>
-        <p>Hands your paddle to a script. The bot follows the ball at a capped 4 units per frame while the ball is coming toward it, and drifts back to center otherwise. It is deliberately beatable: a steep angle off the fly's paddle can outrun it. Toggle with the checkbox or the B key, even mid-rally.</p>
+        <p>Hands your paddle to a script. The bot follows the ball at a capped 4 units per frame while the ball is coming toward it, and drifts back to center otherwise. It is deliberately beatable: a steep angle off the fly's paddle can outrun it. Toggle with the checkbox or the B key, even mid-rally. Leave it on to train the fly unattended.</p>
       </details>
     </div>
     <details class="shortcuts"><summary>Keyboard shortcuts</summary>
@@ -60,7 +56,7 @@
         <li><kbd>W</kbd> / <kbd>S</kbd> or <kbd>↑</kbd> / <kbd>↓</kbd> move your paddle</li>
         <li><kbd>Space</kbd> pause and resume</li>
         <li><kbd>B</kbd> toggle the bot</li>
-        <li><kbd>N</kbd> new game</li>
+        <li><kbd>N</kbd> new game (zeroes the score; the fly keeps what it learned)</li>
       </ul>
       <p>The game pauses by itself when this tab is hidden, and resumes when you come back.</p>
     </details>
@@ -79,10 +75,28 @@
       <div id="stats">move 0.00 · 0 ticks/s · 0 spikes</div>
     </div>
 
+    <div class="learn">
+      <div class="learn-line"><strong>Dopamine</strong> <span id="dopamine">PAM 0 · PPL1 0</span> <span id="dopamine-badge" class="badge"></span></div>
+      <div class="learn-line muted" id="memory">no learning data yet</div>
+      <div class="chart-title">Rewards <span class="green">up</span>, punishments <span class="red">down</span>, last 120 events; white line is the fly's return rate over its last 20 balls.</div>
+      <canvas id="learn-chart" width="600" height="100"></canvas>
+      <div class="controls">
+        <label><input type="checkbox" id="learning" checked> Learning (dopamine)</label>
+        <label>Learning rate <input type="range" id="lrate" min="0" max="0.2" step="0.005" value="0.02"> <span id="lrate-v">0.02</span></label>
+        <button id="forget">Forget everything</button>
+      </div>
+      <details><summary>What is this?</summary>
+        <p>Every time the fly returns the ball, its 316 PAM dopamine neurons are stimulated; every time it misses, its 16 PPL1 dopamine neurons are. These are the cells a real fly uses to signal reward and punishment. Their spikes travel down their real axons, rebuilt from the raw synapse counts, to the 8,599 neurons they actually innervate: almost every Kenyon cell and output neuron of the mushroom body, the fly's learning center, plus a few dozen descending neurons.</p>
+        <p>Meanwhile 4.36 million synapses keep an eligibility trace that rises when the sending cell fired just before the receiving cell and fades over 100 brain milliseconds. Each tick, every eligible synapse that received dopamine changes: reward strengthens it, punishment weakens it, scaled by the learning rate. A synapse never changes sign and stays between a tenth and four times its original strength.</p>
+        <p>Two things are ours, not the fly's. A weak diffuse dopamine signal also reaches the visual-projection-to-descending pathway that drives the paddle, because in this simplified model mushroom-body output cannot reach the escape neurons on its own; without it learning could never change play. And reward potentiates while punishment depresses, where the real mushroom body uses depression in both cases with the valence set by which output neuron is affected.</p>
+        <p>Learned weights are saved every minute and on shutdown, and reloaded when the server starts, so the fly keeps its memory across sessions. Forget everything restores the original connectome. The fly cannot learn a new direction of movement, that is fixed by its anatomy; what it can learn is how fast and how hard to react. Watch the return rate line to judge whether it does.</p>
+      </details>
+    </div>
+
     <div class="setting">
       <label>Brain ms per frame <input type="range" id="steps" min="1" max="16" step="1" value="4"> <span id="steps-v">4</span></label>
       <details><summary>What is this?</summary>
-        <p>How many one-millisecond brain steps run for each game frame. Range 1 to 16, default 4. The whole 166,700-neuron brain runs at roughly 95 steps per second on this Mac's GPU, so 4 gives about 22 brain updates per second and 16 gives about 6. More steps per frame means the fly gets more thinking time per frame, which sharpens its reactions, but the game updates its command less often. At the default, one second of game time is about 90 milliseconds of brain time.</p>
+        <p>How many one-millisecond brain steps run for each game frame. Range 1 to 16, default 4. The whole 166,700-neuron brain runs at roughly 80 steps per second on this Mac's GPU with learning on, so 4 gives about 20 brain updates per second and 16 gives about 5. More steps per frame means the fly gets more thinking time per frame, which sharpens its reactions, but the game updates its command less often. At the default, one second of game time is about 80 milliseconds of brain time.</p>
       </details>
     </div>
     <div class="setting">
@@ -104,7 +118,7 @@
       </details>
     </div>
 
-    <p class="caption"><strong>Real:</strong> 166,700 neurons and 25.6 million connections from the MaleCNS v1.0 connectome, stepping live with state carried between frames. The ball is painted onto the fly's lamina (retina) columns and onto its looming detectors (LC4, LPLC2) on the side the ball is on. Left-side descending neurons firing move the paddle up, right-side down. <strong>The shortcut:</strong> the link from retina image to looming detectors is computed by this page, because the simplified neuron model cannot carry it through the fly's lobula.</p>
+    <p class="caption"><strong>Real:</strong> 166,700 neurons and 25.6 million connections from the MaleCNS v1.0 connectome, stepping live with state carried between frames, and learning through its own dopamine neurons. The ball is painted onto the fly's lamina (retina) columns and onto its looming detectors (LC4, LPLC2) on the side the ball is on. Left-side descending neurons firing move the paddle up, right-side down. <strong>The shortcuts:</strong> the link from retina image to looming detectors, and the diffuse dopamine reaching the paddle pathway, are computed by this page, because the simplified neuron model cannot carry either through the fly's own circuits.</p>
   </section>
 </main>
 <div id="toast" hidden></div>

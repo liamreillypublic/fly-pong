@@ -105,6 +105,8 @@ class Plasticity:
         self.idx = torch.as_tensor(np.asarray(idx, dtype=np.int64), device=dev)
         self.innervated = torch.as_tensor(np.asarray(innervated, dtype=bool), device=dev)
         self.reflex = torch.as_tensor(np.asarray(reflex, dtype=np.float32), device=dev)
+        self.reflex_mask = self.reflex > 0
+        self._changed = (0, 0)
         self.src = model.source[self.idx]
         self.dst = model.target[self.idx]
         self.w0 = model.weight[self.idx].clone()
@@ -193,16 +195,25 @@ class Plasticity:
             self.model.weight[self.idx] = new_w
             self.dirty = True
         if self._ticks % DRIFT_EVERY == 1:
-            rel = (self.model.weight[self.idx] - self.w0).abs() / self.w0_abs.clamp(min=1e-12)
-            mb = rel[self.innervated]
-            rf = rel[self.reflex > 0]
-            self._drift = (float(mb.mean()) if mb.numel() else 0.0, float(rf.mean()) if rf.numel() else 0.0)
+            self._recompute_drift()
         return self.stats(learning)
+
+    def _recompute_drift(self) -> None:
+        """Mean relative change over the synapses that actually changed, plus their counts."""
+        rel = (self.model.weight[self.idx] - self.w0).abs() / self.w0_abs.clamp(min=1e-12)
+        changed = rel > 1e-6
+        mb_changed = changed & self.innervated
+        rf_changed = changed & self.reflex_mask
+        mb = rel[mb_changed]
+        rf = rel[rf_changed]
+        self._drift = (float(mb.mean()) if mb.numel() else 0.0, float(rf.mean()) if rf.numel() else 0.0)
+        self._changed = (int(mb_changed.sum().item()), int(rf_changed.sum().item()))
 
     def stats(self, learning: bool) -> dict:
         return {
             "pam": int(self._pam_spikes.item()), "ppl1": int(self._ppl1_spikes.item()), "event": self.event,
             "mb_drift": self._drift[0], "reflex_drift": self._drift[1],
+            "mb_changed": self._changed[0], "reflex_changed": self._changed[1],
             "rewards": self.rewards, "punishments": self.punishments, "age_s": round(self.age_s, 1),
             "plastic": int(self.idx.numel()),
             "saved_ago_s": None if self.last_save_time is None else round(time.time() - self.last_save_time, 1),
@@ -226,6 +237,7 @@ class Plasticity:
         self.rewards = self.punishments = 0
         self.age_s = 0.0
         self._drift = (0.0, 0.0)
+        self._changed = (0, 0)
         self.dirty = True
 
     def _idx_sha(self) -> str:

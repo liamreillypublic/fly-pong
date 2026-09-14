@@ -112,11 +112,14 @@ Weights are not.
 
 `stats.learning` in every `command`:
 `{"pam": spikes this tick, "ppl1": spikes this tick, "event": "reward" |
-"punishment" | null, "mb_drift": mean |w - w0| / |w0| over group 1,
-"reflex_drift": same over group 2, "rewards": lifetime, "punishments":
-lifetime, "age_s": brain age, "plastic": |P|, "saved_ago_s": seconds
-since last save or null, "enabled": bool}`.
-Drift is recomputed every 10 ticks and cached between.
+"punishment" | "both" | null, "mb_drift": mean |w - w0| / |w0| over the
+group-1 synapses that have changed, "mb_changed": how many group-1 synapses
+have changed, "reflex_drift" and "reflex_changed": same for group 2,
+"rewards": lifetime, "punishments": lifetime, "age_s": brain age, "plastic":
+|P|, "saved_ago_s": seconds since last save or null, "enabled": bool}`.
+Drift is recomputed every 10 ticks and cached between. (Averaging over all
+synapses in a group would read as zero forever, since only the synapses
+active near a reward or punishment ever move.)
 
 ## Protocol changes
 

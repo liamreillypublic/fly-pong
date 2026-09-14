@@ -46,6 +46,14 @@ kbd { background: #0a0c12; border: 1px solid #3a4154; border-radius: 4px; paddin
 .amber { color: var(--accent); }
 .blue { color: var(--blue); }
 #chart { height: 120px; }
+.learn { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 8px; }
+.learn-line { margin: 4px 0; }
+.badge { font-weight: 600; text-transform: uppercase; font-size: 12px; letter-spacing: 0.06em; }
+.badge.reward { color: #6bbf7a; }
+.badge.punishment { color: #e05d5d; }
+.green { color: #6bbf7a; }
+.red { color: #e05d5d; }
+#learn-chart { height: 100px; }
 .hud { margin: 8px 0; }
 .bar-row { display: grid; grid-template-columns: 110px 1fr 40px; align-items: center; gap: 8px; margin: 4px 0; }
 .bar { height: 10px; background: #0a0c12; border-radius: 5px; overflow: hidden; }
