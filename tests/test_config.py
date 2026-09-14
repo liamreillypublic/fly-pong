@@ -47,5 +47,11 @@ def test_learning_params_exist():
 
 def test_paths_respect_env_override(monkeypatch, tmp_path):
     monkeypatch.setenv("FLYPONG_DATA", str(tmp_path))
-    assert config.graph_path() == tmp_path / "data" / "graph.npz"
+    assert config.upstream_graph_path() == tmp_path / "data" / "graph.npz"
+    assert config.graph_path() in (config.PROJECT_GRAPH_PATH, tmp_path / "data" / "graph.npz")
     assert config.annotations_path().name == "body-annotations-male-cns-v1.0-minconf-0.5.feather"
+    assert config.raw_edges_path().name == "connectome-weights-male-cns-v1.0-minconf-0.5.feather"
+
+
+def test_snap_dt():
+    assert config.snap_dt(0.9) == 1.0 and config.snap_dt(0.4) == 0.5 and config.snap_dt(0.3) == 0.25

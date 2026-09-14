@@ -1,11 +1,20 @@
 """Reward-modulated three-factor plasticity driven by the fly's real dopamine neurons.
 
-Reward stimulates the PAM cells, punishment the PPL1 cells. Their spikes
-reach the neurons they really innervate (dopamine edges rebuilt from the raw
-synapse file) and set a per-neuron dopamine trace D. A diffuse trace G also
-reaches the reflex pathway so learning can change play. Plastic synapses keep
-an eligibility trace of pre-then-post coincidences; each tick
-w += rate * dopamine * eligibility * |w0|, bounded and sign-preserving.
+Reward stimulates the PAM cells, punishment the PPL1 cells, each scaled by
+prediction error (how surprising the outcome was given the fly's recent
+return rate). Their spikes reach the neurons they really innervate (dopamine
+edges rebuilt from the raw synapse file) and set a per-neuron dopamine trace
+D. Diffuse traces G+ (reward) and G- (punishment) also reach the reflex
+pathway so learning can change play; the punishment side is gated by the
+`punish_reflex` parameter, default 0.
+
+Eligibility is causal (pre before post): every neuron keeps a presynaptic
+trace x that rises when its spikes transmit and decays over TAU_PRE; when a
+neuron fires, each plastic synapse onto it gains its presynaptic trace. Each
+tick, eligible synapses that received dopamine change by
+rate * dopamine * eligibility * |w0|, bounded and sign-preserving.
+
+Edge indices are CSR positions of the project graph.
 """
 from __future__ import annotations
 
@@ -23,11 +32,13 @@ from . import config
 
 TAU_DOPAMINE_MS = 30.0
 TAU_ELIGIBILITY_MS = 100.0
-BURST_STEPS = 8
-BURST_DRIVE = 0.3
+TAU_PRE_MS = 20.0
+BURST_STEPS_MS = 8.0
+BURST_DRIVE = 0.3          # dimensionless, scaled by DRIVE_MV in the brain
 MIN_SCALE, MAX_SCALE = 0.1, 4.0
 MAX_PLASTIC = 8_000_000
 DRIFT_EVERY = 10
+EXPECTATION_ALPHA = 0.1
 
 
 class WeightsUnstable(RuntimeError):
@@ -80,7 +91,8 @@ def load_dopamine_edges(path: Path, n: int) -> tuple[np.ndarray, np.ndarray, np.
 
 
 def select_plastic(source, target, weight, dop_dst, dop_count, superclass, max_plastic=MAX_PLASTIC):
-    """Plastic edge indices plus two aligned masks: dopamine-innervated target, reflex pathway."""
+    """Plastic edge indices (sorted CSR positions) plus two aligned masks:
+    dopamine-innervated target, reflex pathway."""
     source, target, weight = np.asarray(source), np.asarray(target), np.asarray(weight)
     superclass = np.asarray(superclass).astype(str)
     n = len(superclass)
@@ -101,22 +113,35 @@ class Plasticity:
                  pam_idx, ppl1_idx, graph_sha: str = ""):
         dev = model.device
         self.model = model
-        self.n = model.voltage.numel()
-        self.idx = torch.as_tensor(np.asarray(idx, dtype=np.int64), device=dev)
+        self.n = model.n
+        idx = np.asarray(idx, dtype=np.int64)
+        if len(idx) and np.any(np.diff(idx) <= 0):
+            raise ValueError("plastic indices must be strictly increasing")
+        self.idx = torch.as_tensor(idx, device=dev)
         self.innervated = torch.as_tensor(np.asarray(innervated, dtype=bool), device=dev)
         self.reflex = torch.as_tensor(np.asarray(reflex, dtype=np.float32), device=dev)
         self.reflex_mask = self.reflex > 0
-        self._changed = (0, 0)
-        self.src = model.source[self.idx]
-        self.dst = model.target[self.idx]
+        source = np.asarray(model.source)
+        self.src = torch.as_tensor(source[idx].astype(np.int64), device=dev)
+        self.dst = model.target[self.idx].long()
         self.w0 = model.weight[self.idx].clone()
         self.w0_abs = self.w0.abs()
         self.sign = torch.sign(self.w0)
         self.lo = MIN_SCALE * self.w0_abs
         self.hi = MAX_SCALE * self.w0_abs
-        self.elig = torch.zeros(len(self.idx), device=dev)
+        self.elig = torch.zeros(len(idx), device=dev)
+        self.x = torch.zeros(self.n, device=dev)          # presynaptic trace per neuron
         self.D = torch.zeros(self.n, device=dev)
-        self.G = 0.0
+        self.G_plus = 0.0
+        self.G_minus = 0.0
+        # incoming-edge index (CSC): CSR positions grouped by target neuron
+        target = model.target.cpu().numpy().astype(np.int64)
+        order = np.argsort(target, kind="stable")
+        indptr_t = np.zeros(self.n + 1, np.int64)
+        np.cumsum(np.bincount(target, minlength=self.n), out=indptr_t[1:])
+        self.indptr_t = torch.as_tensor(indptr_t, device=dev)
+        self.csc_pos = torch.as_tensor(order.astype(np.int32), device=dev)
+        # dopamine edges normalized per target
         dop_dst = np.asarray(dop_dst, dtype=np.int64)
         dop_count = np.asarray(dop_count, dtype=np.float64)
         total = np.bincount(dop_dst, weights=dop_count, minlength=self.n)
@@ -127,35 +152,50 @@ class Plasticity:
         self.pam = torch.as_tensor(np.asarray(pam_idx, dtype=np.int64), device=dev)
         self.ppl1 = torch.as_tensor(np.asarray(ppl1_idx, dtype=np.int64), device=dev)
         self._burst_drive = torch.zeros(self.n, device=dev)
-        self.burst_pam = 0
-        self.burst_ppl1 = 0
-        self.decay_d = math.exp(-1.0 / TAU_DOPAMINE_MS)
-        self.decay_e = math.exp(-1.0 / TAU_ELIGIBILITY_MS)
+        self.burst_pam = self.burst_ppl1 = 0
+        self.mag_pam = self.mag_ppl1 = 0.0
         self.graph_sha = graph_sha
-        self.rewards = 0
-        self.punishments = 0
+        self.expected = 0.5
+        self.rpe = 0.0
+        self.rewards = self.punishments = 0
         self.age_s = 0.0
         self.dirty = False
         self.last_save_time: float | None = None
         self.event = None
         self._ticks = 0
         self._drift = (0.0, 0.0)
+        self._changed = (0, 0)
         self._pam_spikes = torch.zeros((), dtype=torch.int32, device=dev)
         self._ppl1_spikes = torch.zeros((), dtype=torch.int32, device=dev)
+
+    # ----- time constants follow the model's dt -----
+    def _decays(self) -> tuple[float, float, float]:
+        dt = self.model.dt
+        return math.exp(-dt / TAU_DOPAMINE_MS), math.exp(-dt / TAU_PRE_MS), math.exp(-dt / TAU_ELIGIBILITY_MS)
+
+    def _burst_steps(self) -> int:
+        return max(1, round(BURST_STEPS_MS / self.model.dt))
 
     # ----- per tick -----
     def begin_tick(self, events=()) -> None:
         events = set(events)
         self.event = None
+        self.rpe = 0.0
         if "return" in events:
-            self.burst_pam = BURST_STEPS
-            self.G += 1.0
+            magnitude = 1.0 - self.expected
+            self.expected += EXPECTATION_ALPHA * (1.0 - self.expected)
+            self.burst_pam, self.mag_pam = self._burst_steps(), magnitude
+            self.G_plus += magnitude
             self.rewards += 1
+            self.rpe += magnitude
             self.event = "reward"
         if "miss" in events:
-            self.burst_ppl1 = BURST_STEPS
-            self.G -= 1.0
+            magnitude = self.expected
+            self.expected += EXPECTATION_ALPHA * (0.0 - self.expected)
+            self.burst_ppl1, self.mag_ppl1 = self._burst_steps(), magnitude
+            self.G_minus += magnitude
             self.punishments += 1
+            self.rpe -= magnitude
             self.event = "punishment" if self.event is None else "both"
         self._pam_spikes.zero_()
         self._ppl1_spikes.zero_()
@@ -165,27 +205,44 @@ class Plasticity:
             return None
         self._burst_drive.zero_()
         if self.burst_pam > 0:
-            self._burst_drive[self.pam] = BURST_DRIVE
+            self._burst_drive[self.pam] = BURST_DRIVE * self.mag_pam
             self.burst_pam -= 1
         if self.burst_ppl1 > 0:
-            self._burst_drive[self.ppl1] = BURST_DRIVE
+            self._burst_drive[self.ppl1] = BURST_DRIVE * self.mag_ppl1
             self.burst_ppl1 -= 1
         return self._burst_drive
 
-    def step(self, prev_fired, fired) -> None:
-        self.D.mul_(self.decay_d)
+    def step(self, pre_transmitted, fired, positions=None) -> None:
+        decay_d, decay_x, _ = self._decays()
+        self.x.mul_(decay_x).add_(pre_transmitted.float())
+        self.D.mul_(decay_d)
         self.D.index_add_(0, self.dop_dst, fired[self.dop_src].float() * self.dop_strength)
-        self.G *= self.decay_d
-        coincidence = (prev_fired[self.src] & fired[self.dst]).float()
-        self.elig.mul_(self.decay_e).add_(coincidence).clamp_(max=1.0)
+        self.G_plus *= decay_d
+        self.G_minus *= decay_d
+        post = torch.nonzero(fired, as_tuple=False).flatten()
+        if post.numel():
+            starts = self.indptr_t[post]
+            counts = self.indptr_t[post + 1] - starts
+            total = int(counts.sum().item())
+            if total:
+                offsets = torch.cumsum(counts, 0) - counts
+                k = torch.repeat_interleave(starts - offsets, counts) + torch.arange(total, device=fired.device)
+                pos = self.csc_pos[k].long()
+                r = torch.searchsorted(self.idx, pos).clamp(max=self.idx.numel() - 1)
+                ok = self.idx[r] == pos
+                pr = r[ok]
+                if pr.numel():
+                    self.elig.index_add_(0, pr, self.x[self.src[pr]])
         self._pam_spikes += fired[self.pam].sum(dtype=torch.int32)
         self._ppl1_spikes += fired[self.ppl1].sum(dtype=torch.int32)
 
-    def end_tick(self, learning: bool, rate: float, wall_s: float) -> dict:
+    def end_tick(self, learning: bool, rate: float, wall_s: float, k: int = 1, punish_reflex: float = 0.0) -> dict:
         self.age_s += wall_s
         self._ticks += 1
+        self.elig.clamp_(max=1.0)
         if learning and rate > 0:
-            dopamine = self.D[self.dst] + config.DIFFUSE_GAIN * self.G * self.reflex
+            diffuse = config.DIFFUSE_GAIN * (self.G_plus - float(punish_reflex) * self.G_minus)
+            dopamine = self.D[self.dst] + diffuse * self.reflex
             w = self.model.weight[self.idx]
             proposed = w + rate * dopamine * self.elig * self.w0_abs
             magnitude = (proposed * self.sign).clamp(min=self.lo, max=self.hi)
@@ -194,6 +251,8 @@ class Plasticity:
                 raise WeightsUnstable("nonfinite weight update discarded")
             self.model.weight[self.idx] = new_w
             self.dirty = True
+        _, _, decay_e = self._decays()
+        self.elig.mul_(decay_e ** k)
         if self._ticks % DRIFT_EVERY == 1:
             self._recompute_drift()
         return self.stats(learning)
@@ -212,6 +271,7 @@ class Plasticity:
     def stats(self, learning: bool) -> dict:
         return {
             "pam": int(self._pam_spikes.item()), "ppl1": int(self._ppl1_spikes.item()), "event": self.event,
+            "expected": round(self.expected, 3), "rpe": round(self.rpe, 3),
             "mb_drift": self._drift[0], "reflex_drift": self._drift[1],
             "mb_changed": self._changed[0], "reflex_changed": self._changed[1],
             "rewards": self.rewards, "punishments": self.punishments, "age_s": round(self.age_s, 1),
@@ -227,8 +287,9 @@ class Plasticity:
     # ----- lifecycle -----
     def reset(self) -> None:
         self.elig.zero_()
+        self.x.zero_()
         self.D.zero_()
-        self.G = 0.0
+        self.G_plus = self.G_minus = 0.0
         self.burst_pam = self.burst_ppl1 = 0
 
     def forget(self) -> None:
@@ -236,6 +297,7 @@ class Plasticity:
         self.reset()
         self.rewards = self.punishments = 0
         self.age_s = 0.0
+        self.expected = 0.5
         self._drift = (0.0, 0.0)
         self._changed = (0, 0)
         self.dirty = True
@@ -250,7 +312,7 @@ class Plasticity:
         with open(tmp, "wb") as f:
             np.savez(f, graph_sha=self.graph_sha, idx_sha=self._idx_sha(),
                      weights=self.model.weight[self.idx].cpu().numpy().astype(np.float32),
-                     rewards=self.rewards, punishments=self.punishments, age_s=self.age_s)
+                     rewards=self.rewards, punishments=self.punishments, age_s=self.age_s, expected=self.expected)
         tmp.replace(path)
         self.dirty = False
         self.last_save_time = time.time()
@@ -269,6 +331,7 @@ class Plasticity:
             self.rewards = int(f["rewards"])
             self.punishments = int(f["punishments"])
             self.age_s = float(f["age_s"])
+            self.expected = float(f["expected"]) if "expected" in f.files else 0.5
         self.last_save_time = time.time()
         self.dirty = False
         return True

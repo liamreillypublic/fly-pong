@@ -1,21 +1,23 @@
-"""Live wrapper around the upstream ConnectomeLIF model.
+"""Live wrapper: the Shiu et al. neuron model on the project graph, with named
+readout and monitor sets and hooks for plasticity.
 
-State persists across ticks; reset() is the only way to clear it. An attached
-Plasticity object (see plasticity.py) lets reward and punishment change the
-weights of the fly's own synapses while it plays.
+State persists across ticks; reset() is the only way to clear it. The senses
+produce dimensionless drive (threshold-1 units); this wrapper multiplies it by
+config.DRIVE_MV to get mV per ms.
 """
 from __future__ import annotations
 
-import json
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 import torch
 from malecns.data import sha256
-from malecns.model import ConnectomeLIF, resolve_device
 
+from . import config
+from . import graph as graph_module
+from .neurons import ShiuLIF, csr_from_edges
 from .plasticity import WeightsUnstable
 
 
@@ -26,43 +28,70 @@ class BrainUnstable(RuntimeError):
 @dataclass
 class TickResult:
     fired_indices: np.ndarray   # int64 graph indices that fired at least once during the tick
-    dn_left: int
+    dn_left: int                # escape descending neurons (DNp types), left
     dn_right: int
     total_spikes: int
     wall_ms: float
     learning: dict | None = None
+    mn_left: int = 0            # nerve-cord motor neurons, left
+    mn_right: int = 0
+    monitors: dict = field(default_factory=dict)   # named spike counts this tick
+    steps: int = 0
 
 
 class FlyBrain:
-    def __init__(self, model: ConnectomeLIF, n: int, metadata: dict | None = None, graph_sha: str = ""):
+    def __init__(self, model: ShiuLIF, n: int, metadata: dict | None = None, graph_sha: str = ""):
         self.model = model
         self.n = n
         self.metadata = metadata or {}
         self.graph_sha = graph_sha
-        self.device = model.device.type   # "mps" or "cpu", never "mps:0"
+        self.device = model.device.type   # "mps" or "cpu"
         self.plasticity = None
         dev = model.device
         self._fired_any = torch.zeros(n, dtype=torch.bool, device=dev)
-        self._dn_left = torch.zeros(0, dtype=torch.int64, device=dev)
-        self._dn_right = torch.zeros(0, dtype=torch.int64, device=dev)
+        empty = torch.zeros(0, dtype=torch.int64, device=dev)
+        self._sets: dict[str, torch.Tensor] = {"dn_left": empty, "dn_right": empty, "mn_left": empty, "mn_right": empty}
+        self._monitors: dict[str, torch.Tensor] = {}
 
     @classmethod
-    def from_graph(cls, graph_path: Path, device: str = "auto") -> "FlyBrain":
-        resolved = resolve_device(device)
-        with np.load(graph_path, allow_pickle=False) as g:
-            n = len(g["body_ids"])
-            metadata = json.loads(str(g["metadata"]))
-            model = ConnectomeLIF(n, g["source"], g["target"], g["weight"], device=str(resolved))
-        return cls(model, n, metadata, graph_sha=sha256(graph_path))
+    def from_graph(cls, graph_path: Path, device: str = "auto", dt_ms: float = 1.0, noise_mv: float = 0.0) -> "FlyBrain":
+        if device not in ("auto", "cpu", "mps"):
+            raise ValueError("device must be auto, cpu or mps")
+        available = torch.backends.mps.is_available()
+        if device == "mps" and not available:
+            raise RuntimeError("MPS is unavailable; use --device cpu")
+        dev = "mps" if (device != "cpu" and available) else "cpu"
+        g = graph_module.load(graph_path)
+        n = len(g["body_ids"])
+        model = ShiuLIF(n, g["indptr"], g["target"], g["weight"], g["source"], device=dev, dt_ms=dt_ms, noise_mv=noise_mv)
+        return cls(model, n, g["metadata"], graph_sha=sha256(graph_path))
 
     @classmethod
-    def from_arrays(cls, n: int, source, target, weight, device: str = "cpu") -> "FlyBrain":
-        return cls(ConnectomeLIF(n, source, target, weight, device=device), n)
+    def from_arrays(cls, n: int, source, target, weight, device: str = "cpu", **model_kw) -> "FlyBrain":
+        indptr, tgt, w, src = csr_from_edges(n, source, target, weight)
+        return cls(ShiuLIF(n, indptr, tgt, w, src, device=device, **model_kw), n)
 
-    def set_readout(self, dn_left: np.ndarray, dn_right: np.ndarray) -> None:
-        dev = self.model.device
-        self._dn_left = torch.as_tensor(np.asarray(dn_left, dtype=np.int64), device=dev)
-        self._dn_right = torch.as_tensor(np.asarray(dn_right, dtype=np.int64), device=dev)
+    # ----- configuration -----
+    def _idx(self, values) -> torch.Tensor:
+        return torch.as_tensor(np.asarray(values, dtype=np.int64), device=self.model.device)
+
+    def set_readout(self, dn_left, dn_right, mn_left=(), mn_right=()) -> None:
+        self._sets = {"dn_left": self._idx(dn_left), "dn_right": self._idx(dn_right),
+                      "mn_left": self._idx(mn_left), "mn_right": self._idx(mn_right)}
+
+    def set_monitors(self, **sets) -> None:
+        self._monitors = {name: self._idx(values) for name, values in sets.items()}
+
+    def configure(self, dt_ms: float | None = None, noise_mv: float | None = None) -> None:
+        if dt_ms is not None and abs(dt_ms - self.model.dt) > 1e-9:
+            self.model.set_dt(dt_ms)
+        if noise_mv is not None and abs(noise_mv - self.model.noise_mv) > 1e-9:
+            self.model.set_noise(noise_mv)
+
+    def model_info(self) -> dict:
+        m = self.model
+        return {"name": "shiu-lif", "dt_ms": m.dt, "noise_mv": m.noise_mv, "delay_steps": m.delay_steps,
+                "ref_steps": m.ref_steps, "psp_peak_factor": round(m.psp_peak_factor, 4)}
 
     # ----- learning -----
     def attach_plasticity(self, plasticity) -> None:
@@ -89,7 +118,8 @@ class FlyBrain:
         if self.plasticity is not None:
             self.plasticity.reset()
 
-    def tick(self, drive: np.ndarray, k: int, events=(), learning: bool = True, rate: float = 0.02) -> TickResult:
+    def tick(self, drive: np.ndarray, k: int, events=(), learning: bool = True, rate: float = 0.02,
+             punish_reflex: float = 0.0) -> TickResult:
         if k < 1:
             raise ValueError("k must be at least 1")
         drive = np.asarray(drive, dtype=np.float32)
@@ -99,34 +129,35 @@ class FlyBrain:
             raise ValueError("drive contains nonfinite values")
         dev = self.model.device
         start = time.perf_counter()
-        drive_t = torch.as_tensor(drive, device=dev)
+        drive_t = torch.as_tensor(drive, device=dev) * config.DRIVE_MV
         self._fired_any.zero_()
-        left = torch.zeros((), dtype=torch.int32, device=dev)
-        right = torch.zeros((), dtype=torch.int32, device=dev)
+        counts = {name: torch.zeros((), dtype=torch.int32, device=dev) for name in (*self._sets, *self._monitors)}
         total = torch.zeros((), dtype=torch.int32, device=dev)
         p = self.plasticity
         if p is not None:
             p.begin_tick(events)
-        prev = self.model.spikes.bool()
         with torch.inference_mode():
             for _ in range(k):
                 extra = None if p is None else p.extra_drive()
-                fired = self.model(drive_t if extra is None else drive_t + extra).bool()
+                fired = self.model(drive_t if extra is None else drive_t + extra * config.DRIVE_MV)
                 if p is not None:
-                    p.step(prev, fired)
-                prev = fired
+                    p.step(self.model.delayed_pre, fired, self.model.last_positions)
                 self._fired_any |= fired
-                left += fired[self._dn_left].sum(dtype=torch.int32)
-                right += fired[self._dn_right].sum(dtype=torch.int32)
+                for name, idx in self._sets.items():
+                    counts[name] += fired[idx].sum(dtype=torch.int32)
+                for name, idx in self._monitors.items():
+                    counts[name] += fired[idx].sum(dtype=torch.int32)
                 total += fired.sum(dtype=torch.int32)
-        if not bool(torch.isfinite(self.model.voltage).all()):
+        if not bool(torch.isfinite(self.model.v).all()):
             raise BrainUnstable("nonfinite membrane voltage; lower the stimulus strengths")
         fired_idx = torch.nonzero(self._fired_any, as_tuple=False).flatten().cpu().numpy().astype(np.int64)
         wall_ms = (time.perf_counter() - start) * 1000.0
         learning_stats = None
         if p is not None:
             try:
-                learning_stats = p.end_tick(learning, rate, wall_ms / 1000.0)
+                learning_stats = p.end_tick(learning, rate, wall_ms / 1000.0, k, punish_reflex)
             except WeightsUnstable as e:
                 raise BrainUnstable(str(e)) from None
-        return TickResult(fired_idx, int(left.item()), int(right.item()), int(total.item()), wall_ms, learning_stats)
+        c = {name: int(v.item()) for name, v in counts.items()}
+        return TickResult(fired_idx, c["dn_left"], c["dn_right"], int(total.item()), wall_ms, learning_stats,
+                          c["mn_left"], c["mn_right"], {name: c[name] for name in self._monitors}, k)
