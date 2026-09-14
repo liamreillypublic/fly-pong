@@ -64,10 +64,14 @@ step).
 Per step:
 1. `pre = ring[t - delay_steps]`; event-driven: `active = nonzero(pre)`,
    expand their CSR ranges, `g.index_add_(0, target[pos], weight[pos])`.
-   The gain applied to `g` is set at init so that one isolated spike of
-   weight `w` produces a peak deflection of exactly `w` mV (measured
-   numerically on a single neuron at the chosen `dt`).
-2. `v = v_rest + (v - v_rest) * exp(-dt/tau_m) + g * gain * dt / tau_m
+   Arriving input to a refractory neuron is dropped, as in the original.
+   `g` jumps by `w` and is integrated unscaled, exactly as in the original
+   PyTorch implementation of the model (`v += dt/tau_m * (g - (v -
+   v_rest))`): one synapse peaks the membrane at about `0.157 * w`, about
+   0.043 mV. (A first draft calibrated the peak to `w` itself; that made
+   the network supercritical: one LC4 stimulus ignited self-sustained
+   activity of 3,000 spikes per step. Measured 2026-09-14 and corrected.)
+2. `v = v_rest + (v - v_rest) * exp(-dt/tau_m) + g * dt / tau_m
    + drive * dt + noise * sqrt(dt) * randn`; `g *= exp(-dt/tau_syn)`.
 3. Refractory neurons are held at `v_reset` and do not spike.
 4. `spikes = v >= v_thresh`; spiking neurons reset and enter refractory.
