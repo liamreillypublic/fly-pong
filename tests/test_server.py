@@ -6,20 +6,32 @@ from flypong.server import create_app
 class FakeBrain:
     n = 5
     device = "cpu"
+    plasticity = None
 
     def __init__(self, unstable=False):
         self.resets = 0
+        self.forgets = 0
         self.ticks = []
         self.unstable = unstable
 
-    def tick(self, drive, k):
-        self.ticks.append((np.array(drive), k))
+    def tick(self, drive, k, events=(), learning=True, rate=0.02):
+        self.ticks.append((np.array(drive), k, tuple(events), learning, rate))
         if self.unstable:
             raise BrainUnstable("boom")
-        return TickResult(np.array([1, 3], np.int64), dn_left=2, dn_right=0, total_spikes=4, wall_ms=1.5)
+        return TickResult(np.array([1, 3], np.int64), dn_left=2, dn_right=0, total_spikes=4, wall_ms=1.5,
+                          learning={"fake": True})
 
     def reset(self):
         self.resets += 1
+
+    def forget(self):
+        self.forgets += 1
+
+    def learning_info(self):
+        return {"plastic": 3}
+
+    def save_memory(self, path):
+        pass
 
 
 class FakeSenses:
@@ -101,6 +113,24 @@ async def test_unstable_brain_is_reset_and_reported(aiohttp_client, tmp_path):
     err = await ws.receive_json()
     assert err["type"] == "error" and "reset" in err["message"]
     assert brain.resets == 1
+    await ws.close()
+
+
+async def test_events_reach_the_brain_and_learning_stats_are_echoed(aiohttp_client, tmp_path):
+    _, ws, hello, brain = await connect(aiohttp_client, tmp_path=tmp_path)
+    assert hello["learning"] == {"plastic": 3}
+    await ws.send_json(dict(STATE, events=["return", "bogus"], params={"learning_rate": 0.05, "learning_enabled": 0}))
+    cmd = await ws.receive_json()
+    assert brain.ticks[-1][2] == ("return",) and brain.ticks[-1][3] is False and brain.ticks[-1][4] == 0.05
+    assert cmd["stats"]["learning"] == {"fake": True}
+    await ws.close()
+
+
+async def test_forget(aiohttp_client, tmp_path):
+    _, ws, _, brain = await connect(aiohttp_client, tmp_path=tmp_path)
+    await ws.send_json({"type": "forget"})
+    assert (await ws.receive_json()) == {"type": "forget_ok"}
+    assert brain.forgets == 1
     await ws.close()
 
 

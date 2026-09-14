@@ -46,6 +46,7 @@ class SensoryMap:
         if len(cell_types) != ann.n:
             raise ValueError("cell_types and annotations length mismatch")
         self.n = len(cell_types)
+        self.annotations = ann
         types = np.asarray(cell_types).astype(str)
         dn = ann.superclass == "descending_neuron"
         self.dn_left = np.flatnonzero(dn & (ann.soma_side == "L")).astype(np.int64)

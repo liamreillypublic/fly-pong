@@ -50,9 +50,33 @@ def parse_state(msg: dict) -> GameState:
 def create_app(brain: BrainLike, senses: SensesLike, static_dir: Path = config.STATIC_DIR) -> web.Application:
     app = web.Application()
     app["brain"], app["senses"], app["lock"] = brain, senses, asyncio.Lock()
+
     async def index(request: web.Request) -> web.FileResponse:
         return web.FileResponse(static_dir / "index.html")
 
+    async def memory_saver(app: web.Application):
+        """Save learned weights every SAVE_INTERVAL_S when they changed, and on shutdown."""
+        async def loop_save():
+            while True:
+                await asyncio.sleep(config.SAVE_INTERVAL_S)
+                p = getattr(app["brain"], "plasticity", None)
+                if p is not None and p.dirty:
+                    try:
+                        async with app["lock"]:
+                            app["brain"].save_memory(config.LEARNED_PATH)
+                    except OSError as e:
+                        log.warning("memory save failed: %s", e)
+        task = asyncio.create_task(loop_save())
+        yield
+        task.cancel()
+        p = getattr(app["brain"], "plasticity", None)
+        if p is not None and p.dirty:
+            try:
+                app["brain"].save_memory(config.LEARNED_PATH)
+            except OSError as e:
+                log.warning("memory save on shutdown failed: %s", e)
+
+    app.cleanup_ctx.append(memory_saver)
     app.router.add_get("/ws", ws_handler)
     app.router.add_get("/", index)
     app.router.add_static("/static", static_dir)
@@ -65,8 +89,9 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
     brain, senses, lock = request.app["brain"], request.app["senses"], request.app["lock"]
     readout = MotorReadout()
     loop = asyncio.get_running_loop()
+    learning_info = getattr(brain, "learning_info", lambda: None)()
     await ws.send_json({"type": "hello", "neurons": brain.n, "device": brain.device,
-                        "defaults": config.defaults()})
+                        "defaults": config.defaults(), "learning": learning_info})
     async for msg in ws:
         if msg.type != WSMsgType.TEXT:
             continue
@@ -84,9 +109,14 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
                 params = config.clamp_params(data.get("params"))
                 k = int(params["steps_per_tick"])
                 state = parse_state(data)
+                raw_events = data.get("events") or []
+                events = tuple(e for e in raw_events if e in ("return", "miss")) if isinstance(raw_events, list) else ()
+                learning = params["learning_enabled"] >= 0.5
+                rate = params["learning_rate"]
                 drive = senses.drive(state, params)
                 async with lock:
-                    result = await loop.run_in_executor(None, brain.tick, drive, k)
+                    result = await loop.run_in_executor(
+                        None, lambda: brain.tick(drive, k, events, learning, rate))
                 readout.decay, readout.gain = params["motor_decay"], params["motor_gain"]
                 move = readout.update(result.dn_left, result.dn_right)
                 await ws.send_json({
@@ -94,8 +124,15 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
                     "dn": {"left": result.dn_left, "right": result.dn_right},
                     "spikes": result.fired_indices.tolist(),
                     "stats": {"total_spikes": result.total_spikes, "wall_ms": round(result.wall_ms, 2),
-                              "brain_ms": k, "params": params},
+                              "brain_ms": k, "params": params, "learning": result.learning},
                 })
+            elif kind == "forget":
+                async with lock:
+                    brain.forget()
+                    if config.LEARNED_PATH.exists():
+                        config.LEARNED_PATH.unlink()
+                readout.reset()
+                await ws.send_json({"type": "forget_ok"})
             else:
                 raise ValueError(f"unknown message type: {kind!r}")
         except BrainUnstable as e:
