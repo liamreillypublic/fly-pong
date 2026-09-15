@@ -143,6 +143,13 @@ function renderGame() {
   }
   gctx.fillStyle = "#ffffff";
   gctx.beginPath(); gctx.arc(game.ball.x, game.ball.y, BALL_R, 0, Math.PI * 2); gctx.fill();
+  if (isFullscreen()) {
+    // the score line lives outside the canvas, so draw it on the field in fullscreen
+    gctx.fillStyle = "rgba(230,232,239,0.85)"; gctx.font = "600 26px system-ui"; gctx.textAlign = "center";
+    gctx.fillText(`${game.bot ? "Bot" : "You"} ${game.score.left} : ${game.score.right} Fly`, W / 2, 34);
+    gctx.fillStyle = "rgba(139,144,160,0.8)"; gctx.font = "13px system-ui";
+    gctx.fillText("W up · S down · Space pause · F or Esc leaves fullscreen", W / 2, H - 12);
+  }
   if (game.paused) {
     gctx.fillStyle = "rgba(0,0,0,0.5)"; gctx.fillRect(0, 0, W, H);
     gctx.fillStyle = "#e6e8ef"; gctx.font = "28px system-ui"; gctx.textAlign = "center";
@@ -160,7 +167,7 @@ function fieldState() {
 }
 
 // ---------- input and controls ----------
-const GAME_KEYS = new Set(["Space", "KeyW", "KeyS", "KeyB", "KeyN"]);   // arrows are left to the browser
+const GAME_KEYS = new Set(["Space", "KeyW", "KeyS", "KeyB", "KeyN", "KeyF"]);   // arrows are left to the browser
 window.addEventListener("keydown", (e) => {
   if (e.target.tagName === "INPUT" && e.target.type === "range") {
     // a focused slider must not swallow game keys or move together with the paddle
@@ -174,9 +181,27 @@ window.addEventListener("keydown", (e) => {
   if (e.code === "Space") { togglePause(); return; }
   if (e.code === "KeyB") { setBot(!game.bot); return; }
   if (e.code === "KeyN") { newGame(); return; }
+  if (e.code === "KeyF") { toggleFullscreen(); return; }
   game.keys.add(e.code);
   game.tapped.add(e.code);
 });
+
+// ---------- fullscreen ----------
+const canvasWrap = document.querySelector(".canvas-wrap");
+function isFullscreen() { return !!(document.fullscreenElement || document.webkitFullscreenElement); }
+function toggleFullscreen() {
+  if (isFullscreen()) {
+    (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    return;
+  }
+  const request = canvasWrap.requestFullscreen || canvasWrap.webkitRequestFullscreen;
+  if (!request) { toast("This browser does not support fullscreen."); return; }
+  Promise.resolve(request.call(canvasWrap)).catch((e) => toast(`Fullscreen refused: ${e.message}`));
+}
+$("fullscreen").addEventListener("click", toggleFullscreen);
+for (const ev of ["fullscreenchange", "webkitfullscreenchange"]) {
+  document.addEventListener(ev, () => { $("fullscreen").textContent = isFullscreen() ? "Exit fullscreen (F)" : "Fullscreen (F)"; });
+}
 window.addEventListener("keyup", (e) => game.keys.delete(e.code));
 function setBot(on) {
   game.bot = on; $("bot").checked = on;
