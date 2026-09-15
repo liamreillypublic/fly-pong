@@ -52,8 +52,20 @@ def create_app(brain: BrainLike, senses: SensesLike, static_dir: Path = config.S
     app["brain"], app["senses"], app["lock"] = brain, senses, asyncio.Lock()
     app["runtime"] = {"driver": None}   # mutable after startup, unlike app[...] itself
 
-    async def index(request: web.Request) -> web.FileResponse:
-        return web.FileResponse(static_dir / "index.html")
+    async def index(request: web.Request) -> web.Response:
+        # Version-tag the script and stylesheet with their modification times so
+        # browsers fetch new copies after every change, without hard reloads.
+        html = (static_dir / "index.html").read_text(encoding="utf-8")
+        for name in ("app.js", "style.css"):
+            path = static_dir / name
+            if path.exists():
+                html = html.replace(f"/static/{name}\"", f"/static/{name}?v={int(path.stat().st_mtime)}\"")
+        return web.Response(text=html, content_type="text/html")
+
+    async def no_cache(request: web.Request, response: web.StreamResponse) -> None:
+        response.headers["Cache-Control"] = "no-cache"
+
+    app.on_response_prepare.append(no_cache)
 
     async def memory_saver(app: web.Application):
         """Save learned weights every SAVE_INTERVAL_S when they changed, and on shutdown."""

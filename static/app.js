@@ -157,14 +157,18 @@ function fieldState() {
 }
 
 // ---------- input and controls ----------
+const GAME_KEYS = new Set(["ArrowUp", "ArrowDown", "Space", "KeyW", "KeyS", "KeyB", "KeyN"]);
 window.addEventListener("keydown", (e) => {
   if (e.target.tagName === "INPUT" && e.target.type === "range") {
     // a focused slider must not swallow game keys or move together with the paddle
     e.target.blur();
-    if (e.code.startsWith("Arrow") || e.code === "Space") e.preventDefault();
   }
-  if (e.target.tagName === "SELECT") return;
-  if (e.code === "Space") { e.preventDefault(); togglePause(); return; }
+  if (e.target.tagName === "SELECT" || e.target.tagName === "TEXTAREA" ||
+      (e.target.tagName === "INPUT" && e.target.type === "text")) return;
+  // Arrow keys and Space scroll the page by default; the page is much taller
+  // than the window, so the game would scroll out of view while playing.
+  if (GAME_KEYS.has(e.code)) e.preventDefault();
+  if (e.code === "Space") { togglePause(); return; }
   if (e.code === "KeyB") { setBot(!game.bot); return; }
   if (e.code === "KeyN") { newGame(); return; }
   game.keys.add(e.code);

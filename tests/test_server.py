@@ -170,8 +170,16 @@ async def test_only_the_newest_connection_drives_the_fly(aiohttp_client, tmp_pat
     await ws1.close()
 
 
-async def test_index_is_served(aiohttp_client, tmp_path):
+async def test_index_is_served_with_cache_busting_and_no_cache(aiohttp_client, tmp_path):
+    (tmp_path / "app.js").write_text("// script")
+    (tmp_path / "style.css").write_text("/* css */")
     client, ws, _, _ = await connect(aiohttp_client, tmp_path=tmp_path)
     await ws.close()
+    (tmp_path / "index.html").write_text('<link rel="stylesheet" href="/static/style.css"><h1>ok</h1><script src="/static/app.js"></script>')
     resp = await client.get("/")
-    assert resp.status == 200 and "ok" in await resp.text()
+    text = await resp.text()
+    assert resp.status == 200 and "ok" in text
+    assert '/static/app.js?v=' in text and '/static/style.css?v=' in text
+    assert resp.headers["Cache-Control"] == "no-cache"
+    static = await client.get("/static/app.js")
+    assert static.status == 200 and static.headers["Cache-Control"] == "no-cache"
