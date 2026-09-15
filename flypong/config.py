@@ -78,6 +78,9 @@ PARAMS: dict[str, Param] = {
     "readout_motor": Param(0, 0, 1),
     "readout_normalize": Param(1, 0, 1),
     "punish_reflex": Param(0, 0, 1),
+    "sugar": Param(0.5, 0.0, 1.0),          # a return: sugar on the mouth, drive on the labellar taste neurons
+    "heat": Param(0.5, 0.0, 1.0),           # a miss: heat on the antennae, drive on the hot cells
+    "dan_injection": Param(1, 0, 1),        # also drive the dopamine cells directly (0: only through the senses)
     "depression_u": Param(0.2, 0.0, 0.5),
 }
 DT_CHOICES = (1.0, 0.5, 0.25)

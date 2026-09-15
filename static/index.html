@@ -99,6 +99,12 @@
         <label><input type="checkbox" id="learning" checked> Learning (dopamine)</label>
         <label>Learning rate <input type="range" id="lrate" min="0" max="0.1" step="0.001" value="0.005"> <span id="lrate-v">0.005</span></label>
         <label><input type="checkbox" id="punish"> Punishment reaches the reflex pathway</label>
+        <label>Sugar reward <input type="range" id="sugar" min="0" max="1" step="0.05" value="0.5"> <span id="sugar-v">0.5</span></label>
+        <label>Heat punishment <input type="range" id="heat" min="0" max="1" step="0.05" value="0.5"> <span id="heat-v">0.5</span></label>
+        <label><input type="checkbox" id="injection" checked> Dopamine injection</label>
+        <details><summary>What makes it want to hit the ball?</summary>
+          <p>Nothing in a wiring diagram wants anything, so the game gives the fly what a real fly wants. A return puts <strong>sugar on its mouth</strong>: its 275 labellar taste neurons fire for 300 ms (the data set does not tell sugar cells from bitter ones, so all of them). A miss puts <strong>heat on its antennae</strong>: its 7 hot cells fire for 300 ms, the punishment used in the classic flight-simulator experiments where tethered flies learn to steer away from heat. With <em>Dopamine injection</em> on, the reward and punishment dopamine cells (PAM and PPL1) are also driven directly, scaled by how surprising the outcome was; off, only the fly's own taste and heat circuits can reach them. The learning window is now 1.5 s, the mushroom body's real pairing time, so the paddle move that caused the outcome is still eligible when the dopamine arrives; in the first three training sessions it was 100 ms and the credit was gone before the reward came. Turn on the bot and leave learning on to train it unattended; <code>uv run python -m flypong.train</code> runs the same experiment headless and prints the numbers.</p>
+        </details>
         <button id="forget">Forget everything</button>
       </div>
       <details><summary>What is this?</summary>

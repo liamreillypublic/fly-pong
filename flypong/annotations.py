@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pyarrow.feather as feather
 
-COLUMNS = ["bodyId", "somaSide", "superclass", "somaLocation", "assignedOlHex1", "assignedOlHex2"]
+COLUMNS = ["bodyId", "somaSide", "superclass", "somaLocation", "assignedOlHex1", "assignedOlHex2", "class"]
 
 
 @dataclass
@@ -17,10 +17,14 @@ class Annotations:
     hex1: np.ndarray        # int32, -1 when missing
     hex2: np.ndarray        # int32, -1 when missing
     soma_xyz: np.ndarray    # float32 (n, 3), NaN rows when missing
+    cls: np.ndarray | None = None   # str: the annotation "class" (gustatory, thermosensory, ...), "" when missing
 
     @property
     def n(self) -> int:
         return len(self.soma_side)
+
+    def classes(self) -> np.ndarray:
+        return self.cls if self.cls is not None else np.full(self.n, "", dtype="<U40")
 
 
 def from_rows(rows: list[dict], body_ids: np.ndarray) -> Annotations:
@@ -33,6 +37,7 @@ def from_rows(rows: list[dict], body_ids: np.ndarray) -> Annotations:
     hex1 = np.full(n, -1, dtype=np.int32)
     hex2 = np.full(n, -1, dtype=np.int32)
     xyz = np.full((n, 3), np.nan, dtype=np.float32)
+    cls = np.full(n, "", dtype="<U40")
     for i, body in enumerate(body_ids):
         r = by_id.get(int(body))
         if r is None:
@@ -41,6 +46,8 @@ def from_rows(rows: list[dict], body_ids: np.ndarray) -> Annotations:
             side[i] = str(r["somaSide"])[0]
         if r.get("superclass"):
             superclass[i] = r["superclass"]
+        if r.get("class"):
+            cls[i] = r["class"]
         if r.get("assignedOlHex1") is not None:
             hex1[i] = int(r["assignedOlHex1"])
         if r.get("assignedOlHex2") is not None:
@@ -48,7 +55,7 @@ def from_rows(rows: list[dict], body_ids: np.ndarray) -> Annotations:
         loc = r.get("somaLocation")
         if loc is not None and len(loc) == 3:
             xyz[i] = loc
-    return Annotations(side, superclass, hex1, hex2, xyz)
+    return Annotations(side, superclass, hex1, hex2, xyz, cls)
 
 
 def load(path: Path, body_ids: np.ndarray) -> Annotations:

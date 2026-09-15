@@ -26,6 +26,40 @@ from .annotations import Annotations, load
 LOOM_TYPES = ("LC4", "LPLC2")
 LAMINA_TYPES = ("L1", "L2", "L3")
 PHOTORECEPTOR_PREFIXES = ("R1-R6", "R7", "R8")
+HOT_CELL_TYPE = "TRN_VP2"       # the arista's hot cells project to glomerulus VP2
+SUGAR_MS = 300.0                # how long a taste of sugar lasts on the mouth, brain ms
+HEAT_MS = 300.0                 # how long a heat pulse lasts
+
+
+class Outcomes:
+    """Reward and punishment as the fly would sense them, not as an injected signal:
+    a return puts sugar on the mouth (the 275 labellar taste neurons; the data set
+    does not separate sugar from bitter cells, so all of them), a miss heats the
+    antennae (the 7 hot cells). Both last a moment and fade. Whether the fly's own
+    circuits turn them into dopamine is a measurement (see flypong.train --probe)."""
+
+    def __init__(self):
+        self.sugar_until = -1.0
+        self.heat_until = -1.0
+
+    def mark(self, events, now_ms: float) -> None:
+        if "return" in events:
+            self.sugar_until = now_ms + SUGAR_MS
+        if "miss" in events:
+            self.heat_until = now_ms + HEAT_MS
+
+    def active(self, now_ms: float) -> dict:
+        return {"sugar": now_ms < self.sugar_until, "heat": now_ms < self.heat_until}
+
+    def add_to(self, drive: np.ndarray, senses, now_ms: float, params: dict) -> np.ndarray:
+        if now_ms < self.sugar_until:
+            drive[getattr(senses, "taste_mouth", np.zeros(0, np.int64))] += float(params.get("sugar", 0.0))
+        if now_ms < self.heat_until:
+            drive[getattr(senses, "hot", np.zeros(0, np.int64))] += float(params.get("heat", 0.0))
+        return drive
+
+    def reset(self) -> None:
+        self.sugar_until = self.heat_until = -1.0
 
 
 @dataclass(frozen=True)
@@ -111,6 +145,10 @@ class SensoryMap:
             "lc4": np.flatnonzero(types == "LC4").astype(np.int64),
             "photoreceptors": np.flatnonzero(_starts(types, PHOTORECEPTOR_PREFIXES)).astype(np.int64),
         }
+        # what a reward and a punishment feel like: sugar on the mouth, heat on the antennae
+        cls = ann.classes()
+        self.taste_mouth = np.flatnonzero((ann.superclass == "cb_sensory") & (cls == "gustatory")).astype(np.int64)
+        self.hot = np.flatnonzero(types == HOT_CELL_TYPE).astype(np.int64)
         self.pr_hex1, self.pr_hex2, self.pr_side = inherit_columns(types, ann, graph)
         mb_vpn_all = np.zeros(self.n, dtype=bool)
         if graph is not None:

@@ -21,7 +21,7 @@ from aiohttp import WSMsgType, web
 from . import config
 from .brain import BrainUnstable, TickResult
 from .motor import MotorReadout
-from .senses import GameState
+from .senses import GameState, Outcomes
 
 log = logging.getLogger("flypong")
 
@@ -101,6 +101,8 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
     await ws.prepare(request)
     brain, senses, lock = request.app["brain"], request.app["senses"], request.app["lock"]
     readout = MotorReadout()
+    outcomes = Outcomes()
+    brain_ms = 0.0                  # this connection's brain time, for the sugar and heat timers
     loop = asyncio.get_running_loop()
     learning_info = getattr(brain, "learning_info", lambda: None)()
     model_info = getattr(brain, "model_info", lambda: None)()
@@ -121,6 +123,7 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
                 async with lock:
                     brain.reset()
                 readout.reset()
+                outcomes.reset()
                 await ws.send_json({"type": "reset_ok"})
             elif kind == "state":
                 # One brain, one driver: the newest connection controls the fly.
@@ -140,15 +143,23 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
                 learning = params["learning_enabled"] >= 0.5
                 rate = params["learning_rate"]
                 punish_reflex = params["punish_reflex"]
-                drive = senses.drive(state, params)
+                outcomes.mark(events, brain_ms)
+                drive = outcomes.add_to(senses.drive(state, params), senses, brain_ms, params)
                 describe = getattr(senses, "describe", None)
                 sensed = describe(state, params) if describe is not None else None
+                if sensed is not None:
+                    sensed.update(outcomes.active(brain_ms))
+                brain_ms += k * dt
+                injection = params["dan_injection"] >= 0.5
 
                 def run_tick():
                     configure = getattr(brain, "configure", None)
                     if configure is not None:
                         configure(dt_ms=dt, noise_mv=params["noise_mv"], depression_u=params["depression_u"])
-                    return brain.tick(drive, k, events, learning, rate, punish_reflex)
+                    try:
+                        return brain.tick(drive, k, events, learning, rate, punish_reflex, injection)
+                    except TypeError:           # a brain without the injection switch (tests' fakes)
+                        return brain.tick(drive, k, events, learning, rate, punish_reflex)
 
                 async with lock:
                     result = await loop.run_in_executor(None, run_tick)

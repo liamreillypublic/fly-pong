@@ -8,7 +8,7 @@ const LEFT_X = 20, RIGHT_X = W - 20 - PADDLE_W;   // paddle left edges
 const SPEEDUP = 1.03, MAX_SPEED_FACTOR = 2;
 const RECENT_BALLS = 20;
 const SLIDER_DEFAULTS = { "ball-speed": 5, steps: 4, loom: 0.15, gain: 0.5, lrate: 0.005,
-                          noise: 0.5, depression: 0.2, light: 0.05, contrast: 1, mb: 0.1 };
+                          noise: 0.5, depression: 0.2, light: 0.05, contrast: 1, mb: 0.1, sugar: 0.5, heat: 0.5 };
 
 // ---------- DOM ----------
 const $ = (id) => document.getElementById(id);
@@ -229,7 +229,7 @@ const bindSlider = (id, onChange) => {
   el.addEventListener("input", apply); apply();
 };
 bindSlider("ball-speed", (v) => { game.baseSpeed = v; });
-for (const id of ["steps", "loom", "gain", "lrate", "noise", "depression", "light", "contrast", "mb"]) bindSlider(id, () => {});
+for (const id of ["steps", "loom", "gain", "lrate", "noise", "depression", "light", "contrast", "mb", "sugar", "heat"]) bindSlider(id, () => {});
 
 for (const btn of document.querySelectorAll(".preset")) {
   btn.addEventListener("click", () => {
@@ -240,7 +240,7 @@ for (const btn of document.querySelectorAll(".preset")) {
 $("reset-sliders").addEventListener("click", () => {
   for (const [id, v] of Object.entries(SLIDER_DEFAULTS)) setSlider(id, v);
   $("dt").value = "1"; $("shortcut").checked = true; $("readout-motor").checked = false; $("punish").checked = false;
-  $("normalize").checked = true;
+  $("normalize").checked = true; $("injection").checked = true;
   for (const other of document.querySelectorAll(".preset")) other.classList.remove("active");
 });
 for (const el of document.querySelectorAll("input[type=range]")) el.addEventListener("input", () => {
@@ -434,6 +434,9 @@ function params() {
     learning_enabled: $("learning").checked ? 1 : 0,
     learning_rate: parseFloat($("lrate").value),
     punish_reflex: $("punish").checked ? 1 : 0,
+    sugar: parseFloat($("sugar").value),
+    heat: parseFloat($("heat").value),
+    dan_injection: $("injection").checked ? 1 : 0,
   };
 }
 
@@ -514,7 +517,9 @@ function renderSenses(s, mon) {
   renderEyes(s);
   if (!s) { $("sense-line").textContent = "the senses are not reported by this server"; return; }
   const where = s.eye === "L" ? "left" : "right";
-  $("sense-line").textContent = `ball in the ${where} eye · ${Math.round(100 * s.proximity)}% of the way to the paddle · ${Math.round(100 * Math.abs(s.dy))}% off center · ${s.approaching ? "approaching" : "moving away"} · ${s.dark_photoreceptors} photoreceptors darkened · spikes this tick: photoreceptors ${mon.photoreceptors ?? 0}, LC4 ${mon.lc4 ?? 0}, LPLC2 ${mon.lplc2 ?? 0}`;
+  const taste = s.sugar ? " · SUGAR on the mouth" : s.heat ? " · HEAT on the antennae" : "";
+  $("sense-line").textContent = `ball in the ${where} eye · ${Math.round(100 * s.proximity)}% of the way to the paddle · ${Math.round(100 * Math.abs(s.dy))}% off center · ${s.approaching ? "approaching" : "moving away"} · ${s.dark_photoreceptors} photoreceptors darkened · spikes this tick: photoreceptors ${mon.photoreceptors ?? 0}, LC4 ${mon.lc4 ?? 0}, LPLC2 ${mon.lplc2 ?? 0}${taste}`;
+  $("sense-line").style.color = s.sugar ? "#6bbf7a" : s.heat ? "#e05d5d" : "";
   senseBar("sense-loom-l", s.loom.L, 1.0); senseBar("sense-loom-r", s.loom.R, 1.0);
   senseBar("sense-mb", s.mb, 1.0); senseBar("sense-light", s.light, 1.0);
 }

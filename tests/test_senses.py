@@ -76,6 +76,30 @@ def test_eye_columns_and_describe_report_what_the_eyes_get(senses):
     assert s["loom"] == {"L": 0.0, "R": 0.0} and s["dark_photoreceptors"] == 0
 
 
+def test_outcomes_put_sugar_on_the_mouth_and_heat_on_the_antennae():
+    from flypong.senses import HEAT_MS, SUGAR_MS, Outcomes
+    types = np.array(["LB1a", "claw_tpGRN", "TRN_VP2", "TRN_VP3a", "SNta29"])
+    cls = np.array(["gustatory", "gustatory", "thermosensory", "thermosensory", "gustatory"])
+    sup = np.array(["cb_sensory", "cb_sensory", "cb_sensory", "cb_sensory", "vnc_sensory"])
+    ann = Annotations(np.array(["L"] * 5), sup, np.full(5, -1, np.int32), np.full(5, -1, np.int32),
+                      np.full((5, 3), np.nan, np.float32), cls)
+    s = SensoryMap(types, ann, None)
+    assert s.taste_mouth.tolist() == [0, 1] and s.hot.tolist() == [2]        # mouth taste only, hot cells only
+    o = Outcomes()
+    p = P(sugar=0.5, heat=0.4)
+    assert o.active(0.0) == {"sugar": False, "heat": False}
+    o.mark(("return",), 100.0)
+    d = o.add_to(np.zeros(5, np.float32), s, 150.0, p)
+    assert d.tolist() == pytest.approx([0.5, 0.5, 0.0, 0.0, 0.0]) and o.active(150.0)["sugar"]
+    assert o.add_to(np.zeros(5, np.float32), s, 100.0 + SUGAR_MS, p).sum() == 0.0      # it fades
+    o.mark(("miss",), 1000.0)
+    d = o.add_to(np.zeros(5, np.float32), s, 1000.0 + HEAT_MS - 1, p)
+    assert d.tolist() == pytest.approx([0.0, 0.0, 0.4, 0.0, 0.0]) and o.active(1100.0) == {"sugar": False, "heat": True}
+    o.reset()
+    assert o.active(1100.0) == {"sugar": False, "heat": False}
+    assert Annotations(np.array(["L"]), np.array([""]), np.zeros(1, np.int32), np.zeros(1, np.int32), np.zeros((1, 3), np.float32)).classes().tolist() == [""]
+
+
 def test_drive_has_one_finite_value_per_neuron(senses):
     d = senses.drive(state(100.0), P())
     assert d.shape == (24,) and d.dtype == np.float32 and np.isfinite(d).all()

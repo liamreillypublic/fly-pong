@@ -89,6 +89,15 @@ def test_reward_potentiates_and_punishment_depresses_innervated_synapse():
     assert stats["rewards"] == 1 and stats["punishments"] == 1
 
 
+def test_injection_off_keeps_the_bookkeeping_but_no_dopamine_burst():
+    model, p = make()
+    run_tick(model, p)
+    p.begin_tick(("return",), injection=False)
+    assert p.burst_pam == 0 and p.rewards == 1 and p.rpe > 0 and p.extra_drive() is None
+    p.begin_tick(("miss",), injection=True)
+    assert p.burst_ppl1 > 0 and p.extra_drive() is not None
+
+
 def test_prediction_error_scales_with_expectation():
     model, p = make()
     stats = run_tick(model, p, events=("return",))

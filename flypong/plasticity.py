@@ -31,7 +31,11 @@ import torch
 from . import config
 
 TAU_DOPAMINE_MS = 30.0
-TAU_ELIGIBILITY_MS = 100.0
+# The paddle move that returns or loses a ball happens half a second to a second before the
+# outcome. With a 100 ms window (the first three sessions) the credit was gone before the
+# dopamine arrived. In the mushroom body the pairing window between Kenyon-cell activity and
+# dopamine is seconds long, so the eligibility trace now lasts 1.5 s.
+TAU_ELIGIBILITY_MS = 1500.0
 TAU_PRE_MS = 20.0
 BURST_STEPS_MS = 8.0
 BURST_DRIVE = 0.3          # dimensionless, scaled by DRIVE_MV in the brain
@@ -182,14 +186,17 @@ class Plasticity:
         return max(1, round(BURST_STEPS_MS / self.model.dt))
 
     # ----- per tick -----
-    def begin_tick(self, events=()) -> None:
+    def begin_tick(self, events=(), injection: bool = True) -> None:
+        """injection=False leaves the dopamine cells to the fly's own senses (sugar, heat)
+        and only keeps the bookkeeping; the diffuse traces still carry the prediction error."""
         events = set(events)
         self.event = None
         self.rpe = 0.0
+        burst = self._burst_steps() if injection else 0
         if "return" in events:
             magnitude = 1.0 - self.expected
             self.expected += EXPECTATION_ALPHA * (1.0 - self.expected)
-            self.burst_pam, self.mag_pam = self._burst_steps(), magnitude
+            self.burst_pam, self.mag_pam = burst, magnitude
             self.G_plus += magnitude
             self.rewards += 1
             self.rpe += magnitude
@@ -197,7 +204,7 @@ class Plasticity:
         if "miss" in events:
             magnitude = self.expected
             self.expected += EXPECTATION_ALPHA * (0.0 - self.expected)
-            self.burst_ppl1, self.mag_ppl1 = self._burst_steps(), magnitude
+            self.burst_ppl1, self.mag_ppl1 = burst, magnitude
             self.G_minus += magnitude
             self.punishments += 1
             self.rpe -= magnitude

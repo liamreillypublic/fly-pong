@@ -131,7 +131,7 @@ class FlyBrain:
             self.plasticity.reset()
 
     def tick(self, drive: np.ndarray, k: int, events=(), learning: bool = True, rate: float = 0.02,
-             punish_reflex: float = 0.0) -> TickResult:
+             punish_reflex: float = 0.0, injection: bool = True) -> TickResult:
         if k < 1:
             raise ValueError("k must be at least 1")
         drive = np.asarray(drive, dtype=np.float32)
@@ -147,7 +147,7 @@ class FlyBrain:
         total = torch.zeros((), dtype=torch.int32, device=dev)
         p = self.plasticity
         if p is not None:
-            p.begin_tick(events)
+            p.begin_tick(events, injection)
         with torch.inference_mode():
             for _ in range(k):
                 extra = None if p is None else p.extra_drive()
