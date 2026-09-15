@@ -174,8 +174,37 @@ take: credit assignment that is sparse in space and tight in time, and a
 paddle readout that normalizes for overall excitability. Both are
 measurable next steps, not fixes applied here.
 
+### Third session: sparse credit and a normalized readout
+
+Two changes aimed at that diagnosis: reward now reaches only the reflex arc
+(the 237,432 synapses leaving the looming detectors or landing on the 320
+escape neurons, instead of 1.2 million), and the paddle command divides the
+left-right difference by a slow running average of total escape activity,
+so a globally more excitable brain gives the same command. Same protocol:
+
+| Phase | Balls faced | Returned | Synapses changed |
+|---|---|---|---|
+| Original connectome, learning off, 3 min | 39 | 27 (69%) | 0 |
+| Learning on, 5 min (38 rewards, 30 punishments) | 68 | 38 (56%) | reflex arc 180,022 by 2.1%, mushroom body 1.34 M by 2.0% |
+| Trained weights frozen, learning off, 3 min | 52 | 26 (50%) | same |
+
+Verdict, third time: still no improvement, and the drop is now smaller but
+consistent. Three sessions with three different mechanisms (symmetric
+reward and punishment, reward-only over the broad pathway, reward-only over
+the sparse arc with a normalized readout) all leave the trained fly worse
+than the untrained one. The conclusion this project can support: in this
+model, reward-modulated Hebbian strengthening of the escape pathway does
+not make the reflex a better Pong player. Strengthening the synapses that
+fired before a return makes the next reaction on that side stronger and
+earlier, and the evidence says that overshoots more often than it helps.
+What a real fly learns with is a different circuit (the mushroom body
+choosing between behaviors), which this model cannot connect to the paddle.
+The learning system stays on the page, honestly labeled, because watching
+real dopamine neurons rewrite real synapses is the point; it is not sold as
+improvement.
+
 The untrained fly is also weaker on this brain than on the first one (66%
-against 86%). The first model's normalized weights made the escape
+to 69% against 86%). The first model's normalized weights made the escape
 pathway an almost noise-free relay; the published model with realistic
 activity levels gives a noisier, more lifelike reflex. The page is tuned
 for realism, not for the score.
