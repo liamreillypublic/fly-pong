@@ -21,6 +21,7 @@ from . import config
 from .brain import FlyBrain
 from .motor import MotorReadout
 from .senses import GameState, Outcomes, SensoryMap
+from .state import InternalState
 
 # field constants, identical to static/app.js
 W, H = 800.0, 500.0
@@ -151,6 +152,8 @@ def play(brain, senses, params: dict, balls: int, learning: bool, seed: int, lab
     game = Pong(base_speed=5.0, seed=seed)
     readout = MotorReadout(decay=params["motor_decay"], gain=params["motor_gain"], normalize=params["readout_normalize"] >= 0.5)
     outcomes = Outcomes()
+    state = InternalState()
+    state_on = params["state_enabled"] >= 0.5
     k = int(params["steps_per_tick"])
     faced = returns = 0
     blocks: list[int] = []
@@ -160,9 +163,16 @@ def play(brain, senses, params: dict, balls: int, learning: bool, seed: int, lab
     move = 0.0
     while faced < balls:
         events = tuple(game.events); game.events.clear()
+        for e in events:
+            state.eat() if e == "return" else state.scare()
+        gains = state.gains(state_on)
+        eff = dict(params, sugar=params["sugar"] * gains["sugar"], loom_strength=params["loom_strength"] * gains["loom"])
         outcomes.mark(events, brain_ms)
-        drive = outcomes.add_to(senses.drive(game.state(), params), senses, brain_ms, params)
-        r = brain.tick(drive, k, events, learning, params["learning_rate"], params["punish_reflex"], injection)
+        gs = game.state()
+        drive = outcomes.add_to(senses.drive(gs, eff), senses, brain_ms, eff)
+        sensed = senses.describe(gs, eff)
+        state.advance(k, params["metabolism"], loom=max(sensed["loom"].values()) / max(eff["loom_strength"], 1e-9))
+        r = brain.tick(drive, k, events, learning, params["learning_rate"], params["punish_reflex"], injection, gains["reward"])
         brain_ms += k
         move = readout.update(r.dn_left, r.dn_right)
         game.step(move)
@@ -177,8 +187,10 @@ def play(brain, senses, params: dict, balls: int, learning: bool, seed: int, lab
                       f"{(time.perf_counter() - t0) / 60:.1f} min", flush=True)
     rate = returns / max(faced, 1)
     stats = brain.plasticity.stats(learning) if brain.plasticity is not None else {}
+    snap = state.snapshot(state_on)
     print(f"  {label}: returned {returns} of {faced} ({100 * rate:.0f}%), per 50 balls {blocks}, {(time.perf_counter() - t0) / 60:.1f} min"
-          + (f", mushroom body {stats['mb_changed']:,} synapses changed by {100 * stats['mb_drift']:.1f}%, reflex {stats['reflex_changed']:,} by {100 * stats['reflex_drift']:.1f}%" if stats else ""))
+          + (f", mushroom body {stats['mb_changed']:,} synapses changed by {100 * stats['mb_drift']:.1f}%, reflex {stats['reflex_changed']:,} by {100 * stats['reflex_drift']:.1f}%" if stats else "")
+          + f"; ends with energy {snap['energy']}, hunger {snap['hunger']}, fear {snap['fear']}")
     return {"faced": faced, "returns": returns, "rate": rate, "blocks": blocks}
 
 
@@ -190,9 +202,17 @@ def main() -> None:
     ap.add_argument("--no-injection", action="store_true", help="reward and punishment only through the senses")
     ap.add_argument("--fresh", action="store_true", help="start from the original connectome, not data/learned.npz")
     ap.add_argument("--save", action="store_true", help="save the trained weights to data/learned.npz at the end")
+    ap.add_argument("--no-state", action="store_true", help="no hunger or fear: fixed gains")
+    ap.add_argument("--sugar", type=float, default=None, help="override the sugar reward drive (0 = no reward)")
+    ap.add_argument("--heat", type=float, default=None, help="override the heat punishment drive")
     args = ap.parse_args()
     params = config.defaults()
     params["dan_injection"] = 0 if args.no_injection else 1
+    params["state_enabled"] = 0 if args.no_state else 1
+    if args.sugar is not None:
+        params["sugar"] = args.sugar
+    if args.heat is not None:
+        params["heat"] = args.heat
     t0 = time.perf_counter()
     brain, senses = load_brain(args.device, learning=True)
     if not args.fresh and config.LEARNED_PATH.exists():

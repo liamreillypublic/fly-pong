@@ -186,15 +186,16 @@ class Plasticity:
         return max(1, round(BURST_STEPS_MS / self.model.dt))
 
     # ----- per tick -----
-    def begin_tick(self, events=(), injection: bool = True) -> None:
+    def begin_tick(self, events=(), injection: bool = True, reward_gain: float = 1.0) -> None:
         """injection=False leaves the dopamine cells to the fly's own senses (sugar, heat)
-        and only keeps the bookkeeping; the diffuse traces still carry the prediction error."""
+        and only keeps the bookkeeping; the diffuse traces still carry the prediction error.
+        reward_gain scales how rewarding a return is (hunger: a full fly cares less about sugar)."""
         events = set(events)
         self.event = None
         self.rpe = 0.0
         burst = self._burst_steps() if injection else 0
         if "return" in events:
-            magnitude = 1.0 - self.expected
+            magnitude = (1.0 - self.expected) * float(reward_gain)
             self.expected += EXPECTATION_ALPHA * (1.0 - self.expected)
             self.burst_pam, self.mag_pam = burst, magnitude
             self.G_plus += magnitude

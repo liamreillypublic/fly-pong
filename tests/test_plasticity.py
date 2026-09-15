@@ -96,6 +96,9 @@ def test_injection_off_keeps_the_bookkeeping_but_no_dopamine_burst():
     assert p.burst_pam == 0 and p.rewards == 1 and p.rpe > 0 and p.extra_drive() is None
     p.begin_tick(("miss",), injection=True)
     assert p.burst_ppl1 > 0 and p.extra_drive() is not None
+    model, p = make()
+    p.begin_tick(("return",), True, reward_gain=0.5)        # a full fly: half the reward for the same surprise
+    assert p.rpe == pytest.approx(0.25) and p.mag_pam == pytest.approx(0.25)
 
 
 def test_prediction_error_scales_with_expectation():

@@ -8,7 +8,7 @@ const LEFT_X = 20, RIGHT_X = W - 20 - PADDLE_W;   // paddle left edges
 const SPEEDUP = 1.03, MAX_SPEED_FACTOR = 2;
 const RECENT_BALLS = 20;
 const SLIDER_DEFAULTS = { "ball-speed": 5, steps: 4, loom: 0.15, gain: 0.5, lrate: 0.005,
-                          noise: 0.5, depression: 0.2, light: 0.05, contrast: 1, mb: 0.1, sugar: 0.5, heat: 0.5 };
+                          noise: 0.5, depression: 0.2, light: 0.05, contrast: 1, mb: 0.1, sugar: 0.5, heat: 0.5, metabolism: 0.2 };
 
 // ---------- DOM ----------
 const $ = (id) => document.getElementById(id);
@@ -208,6 +208,7 @@ function setBot(on) {
   $("who-left").textContent = on ? "Bot" : "You";
 }
 $("bot").addEventListener("change", (e) => setBot(e.target.checked));
+if (new URLSearchParams(location.search).get("bot") === "1") setBot(true);   // ?bot=1 opens straight into training
 $("new-game").addEventListener("click", newGame);
 $("pause").addEventListener("click", togglePause);
 function togglePause() {
@@ -229,7 +230,7 @@ const bindSlider = (id, onChange) => {
   el.addEventListener("input", apply); apply();
 };
 bindSlider("ball-speed", (v) => { game.baseSpeed = v; });
-for (const id of ["steps", "loom", "gain", "lrate", "noise", "depression", "light", "contrast", "mb", "sugar", "heat"]) bindSlider(id, () => {});
+for (const id of ["steps", "loom", "gain", "lrate", "noise", "depression", "light", "contrast", "mb", "sugar", "heat", "metabolism"]) bindSlider(id, () => {});
 
 for (const btn of document.querySelectorAll(".preset")) {
   btn.addEventListener("click", () => {
@@ -240,7 +241,7 @@ for (const btn of document.querySelectorAll(".preset")) {
 $("reset-sliders").addEventListener("click", () => {
   for (const [id, v] of Object.entries(SLIDER_DEFAULTS)) setSlider(id, v);
   $("dt").value = "1"; $("shortcut").checked = true; $("readout-motor").checked = false; $("punish").checked = false;
-  $("normalize").checked = true; $("injection").checked = true;
+  $("normalize").checked = true; $("injection").checked = true; $("state-on").checked = true;
   for (const other of document.querySelectorAll(".preset")) other.classList.remove("active");
 });
 for (const el of document.querySelectorAll("input[type=range]")) el.addEventListener("input", () => {
@@ -437,7 +438,29 @@ function params() {
     sugar: parseFloat($("sugar").value),
     heat: parseFloat($("heat").value),
     dan_injection: $("injection").checked ? 1 : 0,
+    state_enabled: $("state-on").checked ? 1 : 0,
+    metabolism: parseFloat($("metabolism").value),
   };
+}
+
+// ---------- internal state: hunger and fear ----------
+function renderStateRules(rules) {
+  $("state-rules").innerHTML = (rules || []).map((r) => {
+    const invented = r.status.includes("invented");
+    return `<li><strong>${r.name}</strong>: ${r.effect}. <span class="muted">${r.basis === "none" ? "" : r.basis + "."}</span><span class="tag ${invented ? "invented" : "measured"}">${invented ? "invented numbers" : "measured effect, our gain"}</span></li>`;
+  }).join("");
+}
+function renderState(st) {
+  if (!st) return;
+  const pct = (v) => `${Math.round(100 * Math.max(0, Math.min(1, v)))}%`;
+  $("bar-energy").style.width = pct(st.energy); $("energy-v").textContent = st.energy.toFixed(2);
+  $("bar-hunger").style.width = pct(st.hunger); $("hunger-v").textContent = st.hunger.toFixed(2);
+  $("bar-fear").style.width = pct(st.fear); $("fear-v").textContent = st.fear.toFixed(2);
+  const mood = st.hunger > 0.6 ? "hungry" : st.hunger > 0.3 ? "peckish" : "fed";
+  const scared = st.fear > 0.5 ? ", frightened" : st.fear > 0.15 ? ", on edge" : "";
+  $("state-line").textContent = `${mood}${scared} · ${st.meals} meals · ${st.scares} scares · ${fmtAge(st.age_s)} of brain time${st.enabled ? "" : " · switched off: fixed gains"}`;
+  const g = st.gains;
+  $("state-gains").textContent = `gains now: sugar taste x${g.sugar.toFixed(2)} · food smell x${g.odor.toFixed(2)} · reward dopamine x${g.reward.toFixed(2)} · looming vision x${g.loom.toFixed(2)}`;
 }
 
 function sendState() {
@@ -527,6 +550,7 @@ function renderSenses(s, mon) {
 function onCommand(cmd) {
   setFlyMove(cmd.move);
   renderSenses(cmd.senses, (cmd.stats && cmd.stats.monitors) || {});
+  renderState(cmd.state);
   if (flash) for (const i of cmd.spikes) { if (flash[i] <= 0) active.push(i); flash[i] = 1; }
   if (atlas && legendCounts.length) {
     const counts = new Array(legendCounts.length).fill(0);
@@ -566,7 +590,7 @@ function connect() {
     const msg = JSON.parse(event.data);
     if (msg.type === "hello") {
       modelInfo = msg.model || null;
-      eyeCols = msg.eyes || null; renderEyes(null);
+      eyeCols = msg.eyes || null; renderEyes(null); renderStateRules(msg.state_rules);
       $("status").textContent = statusText(msg);
     } else if (msg.type === "command") {
       replied(); onCommand(msg); sendState();

@@ -102,6 +102,21 @@
         <label>Sugar reward <input type="range" id="sugar" min="0" max="1" step="0.05" value="0.5"> <span id="sugar-v">0.5</span></label>
         <label>Heat punishment <input type="range" id="heat" min="0" max="1" step="0.05" value="0.5"> <span id="heat-v">0.5</span></label>
         <label><input type="checkbox" id="injection" checked> Dopamine injection</label>
+        <div class="state-box">
+          <div class="learn-line"><strong>Internal state</strong> <span id="state-line" class="muted">waiting for the first tick</span></div>
+          <div class="bar-row"><span>Energy</span><div class="bar"><div id="bar-energy" class="green-bar"></div></div><span id="energy-v">0</span></div>
+          <div class="bar-row"><span>Hunger</span><div class="bar"><div id="bar-hunger"></div></div><span id="hunger-v">0</span></div>
+          <div class="bar-row"><span>Fear</span><div class="bar"><div id="bar-fear" class="red-bar"></div></div><span id="fear-v">0</span></div>
+          <div id="state-gains" class="muted"></div>
+          <div class="controls">
+            <label><input type="checkbox" id="state-on" checked> Hunger and fear act on the circuits</label>
+            <label>Metabolism <input type="range" id="metabolism" min="0" max="2" step="0.05" value="0.2"> <span id="metabolism-v">0.2</span> per brain minute</label>
+          </div>
+          <details><summary>What is this, and which parts are invented?</summary>
+            <p>A wiring diagram is the same whether the fly is starving or full. What changes with state is chemistry: neuromodulators that scale particular circuits. The fly here has an energy budget that burns with time and refills with every taste of sugar, a hunger that is one minus energy, and a fear that jumps with each punishment or looming ball and fades over seconds. Each rule below scales one circuit that real experiments have shown to be modulated that way; the size of every gain, and all the budget numbers, are ours.</p>
+            <ul id="state-rules"></ul>
+          </details>
+        </div>
         <details><summary>What makes it want to hit the ball?</summary>
           <p>Nothing in a wiring diagram wants anything, so the game gives the fly what a real fly wants. A return puts <strong>sugar on its mouth</strong>: its 275 labellar taste neurons fire for 300 ms (the data set does not tell sugar cells from bitter ones, so all of them). A miss puts <strong>heat on its antennae</strong>: its 7 hot cells fire for 300 ms, the punishment used in the classic flight-simulator experiments where tethered flies learn to steer away from heat. With <em>Dopamine injection</em> on, the reward and punishment dopamine cells (PAM and PPL1) are also driven directly, scaled by how surprising the outcome was; off, only the fly's own taste and heat circuits can reach them. The learning window is now 1.5 s, the mushroom body's real pairing time, so the paddle move that caused the outcome is still eligible when the dopamine arrives; in the first three training sessions it was 100 ms and the credit was gone before the reward came. Turn on the bot and leave learning on to train it unattended; <code>uv run python -m flypong.train</code> runs the same experiment headless and prints the numbers.</p>
         </details>

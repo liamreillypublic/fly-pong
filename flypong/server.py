@@ -22,6 +22,7 @@ from . import config
 from .brain import BrainUnstable, TickResult
 from .motor import MotorReadout
 from .senses import GameState, Outcomes
+from .state import RULES, InternalState
 
 log = logging.getLogger("flypong")
 
@@ -102,6 +103,7 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
     brain, senses, lock = request.app["brain"], request.app["senses"], request.app["lock"]
     readout = MotorReadout()
     outcomes = Outcomes()
+    state = InternalState()
     brain_ms = 0.0                  # this connection's brain time, for the sugar and heat timers
     loop = asyncio.get_running_loop()
     learning_info = getattr(brain, "learning_info", lambda: None)()
@@ -110,7 +112,7 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
     runtime["driver"] = ws   # a new tab takes over; older tabs are told to reload
     await ws.send_json({"type": "hello", "neurons": brain.n, "device": brain.device,
                         "defaults": config.defaults(), "learning": learning_info, "model": model_info,
-                        "eyes": getattr(senses, "eye_columns", lambda: None)()})
+                        "eyes": getattr(senses, "eye_columns", lambda: None)(), "state_rules": RULES})
     async for msg in ws:
         if msg.type != WSMsgType.TEXT:
             continue
@@ -137,18 +139,31 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
                 params["dt_ms"] = config.snap_dt(params["dt_ms"])
                 dt = params["dt_ms"]
                 k = max(1, round(params["steps_per_tick"] / dt))      # steps_per_tick is in brain ms
-                state = parse_state(data)
+                game = parse_state(data)
                 raw_events = data.get("events") or []
                 events = tuple(e for e in raw_events if e in ("return", "miss")) if isinstance(raw_events, list) else ()
                 learning = params["learning_enabled"] >= 0.5
                 rate = params["learning_rate"]
                 punish_reflex = params["punish_reflex"]
+                # internal state: a return is a meal, a miss a scare; hunger and fear scale the circuits
+                state_on = params["state_enabled"] >= 0.5
+                for e in events:
+                    if e == "return":
+                        state.eat()
+                    elif e == "miss":
+                        state.scare()
+                gains = state.gains(state_on)
+                effective = dict(params, sugar=params["sugar"] * gains["sugar"],
+                                 loom_strength=params["loom_strength"] * gains["loom"])
                 outcomes.mark(events, brain_ms)
-                drive = outcomes.add_to(senses.drive(state, params), senses, brain_ms, params)
+                drive = outcomes.add_to(senses.drive(game, effective), senses, brain_ms, effective)
                 describe = getattr(senses, "describe", None)
-                sensed = describe(state, params) if describe is not None else None
+                sensed = describe(game, effective) if describe is not None else None
+                loom_shape = 0.0
                 if sensed is not None:
                     sensed.update(outcomes.active(brain_ms))
+                    loom_shape = max(sensed["loom"].values()) / max(effective["loom_strength"], 1e-9)
+                state.advance(k * dt, params["metabolism"], loom=loom_shape)
                 brain_ms += k * dt
                 injection = params["dan_injection"] >= 0.5
 
@@ -157,8 +172,8 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
                     if configure is not None:
                         configure(dt_ms=dt, noise_mv=params["noise_mv"], depression_u=params["depression_u"])
                     try:
-                        return brain.tick(drive, k, events, learning, rate, punish_reflex, injection)
-                    except TypeError:           # a brain without the injection switch (tests' fakes)
+                        return brain.tick(drive, k, events, learning, rate, punish_reflex, injection, gains["reward"])
+                    except TypeError:           # a brain without the newer switches (tests' fakes)
                         return brain.tick(drive, k, events, learning, rate, punish_reflex)
 
                 async with lock:
@@ -173,7 +188,7 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
                     "type": "command", "move": move,
                     "dn": {"left": result.dn_left, "right": result.dn_right},
                     "mn": {"left": result.mn_left, "right": result.mn_right},
-                    "senses": sensed,
+                    "senses": sensed, "state": state.snapshot(state_on),
                     "spikes": result.fired_indices.tolist(),
                     "stats": {"total_spikes": result.total_spikes, "wall_ms": round(result.wall_ms, 2),
                               "brain_ms": round(k * dt, 3), "steps": k,
@@ -186,6 +201,7 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
                     if config.LEARNED_PATH.exists():
                         config.LEARNED_PATH.unlink()
                 readout.reset()
+                state = InternalState()
                 await ws.send_json({"type": "forget_ok"})
             else:
                 raise ValueError(f"unknown message type: {kind!r}")

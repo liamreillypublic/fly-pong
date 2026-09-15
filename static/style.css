@@ -68,6 +68,14 @@ kbd { background: #0a0c12; border: 1px solid #3a4154; border-radius: 4px; paddin
 .bar div.right { background: var(--blue); }
 .bar div.green-bar { background: #6bbf7a; }
 .bar div.white-bar { background: #d8dbe6; }
+.bar div.red-bar { background: #e05d5d; }
+.state-box { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 6px; }
+.state-box .bar-row { grid-template-columns: 70px 1fr 44px; }
+#state-gains { font-size: 12px; font-variant-numeric: tabular-nums; margin: 2px 0 4px; }
+#state-rules li { margin: 4px 0; }
+#state-rules .tag { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; margin-left: 6px; }
+#state-rules .tag.measured { color: #6bbf7a; }
+#state-rules .tag.invented { color: #e8a33d; }
 .bar-row { display: grid; grid-template-columns: 110px 1fr 40px; align-items: center; gap: 8px; margin: 4px 0; }
 .bar { height: 10px; background: #0a0c12; border-radius: 5px; overflow: hidden; }
 .bar div { height: 100%; width: 0; background: var(--accent); transition: width 80ms linear; }

@@ -81,6 +81,8 @@ PARAMS: dict[str, Param] = {
     "sugar": Param(0.5, 0.0, 1.0),          # a return: sugar on the mouth, drive on the labellar taste neurons
     "heat": Param(0.5, 0.0, 1.0),           # a miss: heat on the antennae, drive on the hot cells
     "dan_injection": Param(1, 0, 1),        # also drive the dopamine cells directly (0: only through the senses)
+    "state_enabled": Param(1, 0, 1),        # hunger and fear modulate the circuits (see state.py)
+    "metabolism": Param(0.2, 0.0, 2.0),     # energy burned per brain minute; sugar refills it
     "depression_u": Param(0.2, 0.0, 0.5),
 }
 DT_CHOICES = (1.0, 0.5, 0.25)
