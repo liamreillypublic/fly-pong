@@ -209,6 +209,44 @@ pathway an almost noise-free relay; the published model with realistic
 activity levels gives a noisier, more lifelike reflex. The page is tuned
 for realism, not for the score.
 
+### Fourth session (2026-09-15): what a fly wants, and a learning window that can reach the cause
+
+Three things changed, all toward the animal:
+
+- **Reward and punishment through the fly's own senses.** A return now
+  puts sugar on its mouth: its 275 labellar taste neurons fire for 300 ms
+  (the data set does not separate sugar cells from bitter ones, so all of
+  them). A miss puts heat on its antennae: its 7 hot cells (type TRN_VP2,
+  the arista hot cells' glomerulus) fire for 300 ms, the punishment of the
+  classic flight-simulator experiments in which tethered flies learn to
+  steer away from heat. Sliders "Sugar reward" and "Heat punishment".
+- **A dopamine injection switch.** The direct PAM/PPL1 bursts of the first
+  three sessions can be turned off, leaving the fly's own taste and heat
+  circuits to make the dopamine.
+- **A 1.5 s eligibility window** instead of 100 ms. The paddle move that
+  returns or loses a ball happens half a second to a second before the
+  outcome; with 100 ms the credit had decayed to nothing by the time the
+  dopamine arrived. In the mushroom body the pairing window between
+  Kenyon-cell activity and dopamine is seconds long.
+
+Measured first whether the senses reach the dopamine cells at all
+(`uv run python -m flypong.train --probe`, 300 ms windows, 5 trials):
+
+| stimulus | taste cells | hot cells | PAM (reward dopamine) | PPL1 (punishment dopamine) |
+|---|---|---|---|---|
+| nothing | 68 | 6 | 94 | 40 |
+| sugar on the mouth | 18,206 | 3 | 96 | 68 |
+| heat on the antennae | 77 | 474 | 101 | 41 |
+
+The taste and hot cells fire hard, the dopamine cells do not move. So in
+this network the fly tastes its reward and feels its punishment, but its
+own circuits do not turn either into dopamine; the injection stays on by
+default and is labeled for what it is. The headless trainer
+(`uv run python -m flypong.train --fresh --balls 100 300 100`) then ran
+the same protocol as the earlier sessions, unattended, against the bot,
+from the original connectome: 100 balls with learning off, 300 with
+learning on, 100 with the trained weights frozen.
+
 ## Setup
 
 1. Clone and build the upstream simulator next to this folder:
