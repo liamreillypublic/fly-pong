@@ -24,7 +24,8 @@ const game = {
   flyReturns: 0, flyMisses: 0,
   recent: [],                                       // 1 = returned, 0 = missed, last RECENT_BALLS
   pendingEvents: [],                                // "return" / "miss" since the last state message
-  keys: new Set(),
+  keys: new Set(),                                  // keys currently held
+  tapped: new Set(),                                // keys pressed since the last physics step, even if released already
 };
 let autoPaused = false;
 
@@ -63,10 +64,12 @@ function stepPhysics() {
     const d = target - game.left.y;
     game.left.y += Math.max(-BOT_SPEED, Math.min(BOT_SPEED, d));
   } else {
+    const down = (code) => game.keys.has(code) || game.tapped.has(code);
     let dir = 0;
-    if (game.keys.has("KeyW") || game.keys.has("ArrowUp")) dir -= 1;
-    if (game.keys.has("KeyS") || game.keys.has("ArrowDown")) dir += 1;
+    if (down("KeyW") || down("ArrowUp")) dir -= 1;
+    if (down("KeyS") || down("ArrowDown")) dir += 1;
     game.left.y += dir * PADDLE_SPEED;
+    game.tapped.clear();
   }
   game.left.y = clampPaddle(game.left.y);
   // right paddle: the fly
@@ -172,6 +175,7 @@ window.addEventListener("keydown", (e) => {
   if (e.code === "KeyB") { setBot(!game.bot); return; }
   if (e.code === "KeyN") { newGame(); return; }
   game.keys.add(e.code);
+  game.tapped.add(e.code);
 });
 window.addEventListener("keyup", (e) => game.keys.delete(e.code));
 function setBot(on) {
