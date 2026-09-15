@@ -247,6 +247,24 @@ the same protocol as the earlier sessions, unattended, against the bot,
 from the original connectome: 100 balls with learning off, 300 with
 learning on, 100 with the trained weights frozen.
 
+| Phase | Balls | Returned | Per 50 balls | Synapses changed |
+|---|---|---|---|---|
+| Original connectome, learning off | 100 | 92 (92%) | 96, 88 | 0 |
+| Learning on, sugar and heat, injection on, 1.5 s window | 300 | 237 (79%) | 82, 66, 76, 76, 88, 86 | mushroom body 2.06 M by 152% on average, reflex arc 224,179 by 17.7% |
+| Trained weights frozen, learning off | 100 | 88 (88%) | 88, 88 | same |
+
+Verdict, fourth time: still no improvement over the untrained reflex (88%
+against 92%), but two things are new. The drop is the smallest of the four
+sessions, and for the first time the training curve recovered: it fell to
+66% in the second block of 50 balls and climbed back to 86 to 88% by the
+end, and stayed there when frozen. The longer window let the reward reach
+the causing synapses, and the fly settled into a new stable state; that
+state is simply not a better Pong player than the wiring it started with.
+The headless fly also returns far more than the browser one (92% against
+66 to 86% in the earlier sessions) because it gets exactly 4 brain
+milliseconds every frame, where the page's tick rate rises and falls with
+the machine.
+
 ## Setup
 
 1. Clone and build the upstream simulator next to this folder:

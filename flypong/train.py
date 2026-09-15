@@ -172,7 +172,8 @@ def play(brain, senses, params: dict, balls: int, learning: bool, seed: int, lab
         drive = outcomes.add_to(senses.drive(gs, eff), senses, brain_ms, eff)
         sensed = senses.describe(gs, eff)
         state.advance(k, params["metabolism"], loom=max(sensed["loom"].values()) / max(eff["loom_strength"], 1e-9))
-        r = brain.tick(drive, k, events, learning, params["learning_rate"], params["punish_reflex"], injection, gains["reward"])
+        r = brain.tick(drive, k, events, learning, params["learning_rate"], params["punish_reflex"], injection,
+                       gains["reward"] * float(params.get("reward_scale", 1.0)))
         brain_ms += k
         move = readout.update(r.dn_left, r.dn_right)
         game.step(move)
@@ -205,10 +206,12 @@ def main() -> None:
     ap.add_argument("--no-state", action="store_true", help="no hunger or fear: fixed gains")
     ap.add_argument("--sugar", type=float, default=None, help="override the sugar reward drive (0 = no reward)")
     ap.add_argument("--heat", type=float, default=None, help="override the heat punishment drive")
+    ap.add_argument("--reward", type=float, default=1.0, help="scale the reward dopamine (0 = punishment only)")
     args = ap.parse_args()
     params = config.defaults()
     params["dan_injection"] = 0 if args.no_injection else 1
     params["state_enabled"] = 0 if args.no_state else 1
+    params["reward_scale"] = args.reward
     if args.sugar is not None:
         params["sugar"] = args.sugar
     if args.heat is not None:
