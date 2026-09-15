@@ -66,8 +66,8 @@ function stepPhysics() {
   } else {
     const down = (code) => game.keys.has(code) || game.tapped.has(code);
     let dir = 0;
-    if (down("KeyW") || down("ArrowUp")) dir -= 1;
-    if (down("KeyS") || down("ArrowDown")) dir += 1;
+    if (down("KeyW")) dir -= 1;
+    if (down("KeyS")) dir += 1;
     game.left.y += dir * PADDLE_SPEED;
     game.tapped.clear();
   }
@@ -160,7 +160,7 @@ function fieldState() {
 }
 
 // ---------- input and controls ----------
-const GAME_KEYS = new Set(["ArrowUp", "ArrowDown", "Space", "KeyW", "KeyS", "KeyB", "KeyN"]);
+const GAME_KEYS = new Set(["Space", "KeyW", "KeyS", "KeyB", "KeyN"]);   // arrows are left to the browser
 window.addEventListener("keydown", (e) => {
   if (e.target.tagName === "INPUT" && e.target.type === "range") {
     // a focused slider must not swallow game keys or move together with the paddle
@@ -168,8 +168,8 @@ window.addEventListener("keydown", (e) => {
   }
   if (e.target.tagName === "SELECT" || e.target.tagName === "TEXTAREA" ||
       (e.target.tagName === "INPUT" && e.target.type === "text")) return;
-  // Arrow keys and Space scroll the page by default; the page is much taller
-  // than the window, so the game would scroll out of view while playing.
+  // Space scrolls the page by default; the page is much taller than the
+  // window, so the game would scroll out of view while playing.
   if (GAME_KEYS.has(e.code)) e.preventDefault();
   if (e.code === "Space") { togglePause(); return; }
   if (e.code === "KeyB") { setBot(!game.bot); return; }

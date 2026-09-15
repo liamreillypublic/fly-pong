@@ -236,7 +236,7 @@ for realism, not for the score.
 
 ## Controls
 
-W/S or arrows move your paddle. Space pauses. B hands your paddle to a bot.
+W moves your paddle up and S moves it down. Space pauses. B hands your paddle to a bot.
 N starts a new game. First to 7 points wins; the page tracks the fly's
 return rate as you play, and pauses itself when the tab is hidden.
 
