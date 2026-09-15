@@ -1,3 +1,4 @@
+import pytest
 from flypong.motor import MotorReadout
 
 
@@ -30,6 +31,17 @@ def test_command_is_clipped():
     assert r.update(0, 1000) == 1.0
     r.reset()
     assert r.update(1000, 0) == -1.0
+
+
+def test_normalized_readout_is_invariant_to_global_excitability():
+    quiet, loud = MotorReadout(decay=0.5, gain=0.5, normalize=True), MotorReadout(decay=0.5, gain=0.5, normalize=True)
+    for _ in range(300):                       # let the running totals settle at 3 and 30 spikes per tick
+        quiet.update(1, 2); loud.update(10, 20)
+    assert quiet.update(1, 2) == pytest.approx(loud.update(10, 20), rel=0.02)
+    raw_quiet, raw_loud = MotorReadout(decay=0.5, gain=0.05), MotorReadout(decay=0.5, gain=0.05)
+    for _ in range(300):
+        raw_quiet.update(1, 2); raw_loud.update(10, 20)
+    assert raw_loud.update(10, 20) > 5 * raw_quiet.update(1, 2)   # the raw readout scales with activity
 
 
 def test_reset_zeroes_accumulator():

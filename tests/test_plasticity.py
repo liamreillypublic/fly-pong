@@ -22,7 +22,7 @@ STRONG = 1.5   # dimensionless drive: 10.5 mV/ms, fires every refractory period
 def make():
     indptr, target, weight, source = csr_from_edges(6, [e[0] for e in EDGES], [e[1] for e in EDGES], [e[2] for e in EDGES])
     model = ShiuLIF(6, indptr, target, weight, source, device="cpu", depression_u=0.0)   # test the rule alone
-    idx, innervated, reflex = P.select_plastic(source, target, weight, DOP_DST, DOP_CNT, SUPER)
+    idx, innervated, reflex = P.select_plastic(source, target, weight, DOP_DST, DOP_CNT, SUPER, TYPES)
     pam, ppl1 = P.dopamine_cells(TYPES)
     p = P.Plasticity(model, idx, innervated, reflex, DOP_SRC, DOP_DST, DOP_CNT,
                      np.array([1.0, -1.0], np.float32), pam, ppl1, graph_sha="abc")
@@ -59,6 +59,15 @@ def test_select_plastic_masks():
     model, p = make()
     assert p.idx.tolist() == [0, 3]                       # CSR positions of 0->1 and 4->5
     assert p.innervated.tolist() == [True, False] and p.reflex_mask.tolist() == [True, True]
+
+
+def test_reflex_arc_excludes_synapses_outside_the_looming_to_escape_path():
+    types = np.array(["aMe26", "DNge001", "LC4", "Mi1", "DNp02"])
+    superclass = np.array(["visual_projection", "descending_neuron", "visual_projection", "ol_intrinsic", "descending_neuron"])
+    src = np.array([0, 2, 3]); dst = np.array([1, 3, 4]); w = np.array([1.0, 1.0, 1.0], np.float32)
+    idx, innervated, reflex = P.select_plastic(src, dst, w, np.array([], int), np.array([], float), superclass, types)
+    # 0->1 is visual projection onto a non-escape DN: not in the arc; 2->3 leaves a looming detector; 3->4 lands on an escape DN
+    assert idx.tolist() == [1, 2] and reflex.tolist() == [True, True]
 
 
 def test_eligibility_rises_when_post_fires_after_pre():

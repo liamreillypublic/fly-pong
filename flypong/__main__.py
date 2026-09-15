@@ -104,7 +104,7 @@ def main(argv=None) -> int:
         pam, ppl1 = dopamine_cells(g["cell_types"])
         dop_sign = np.where(np.isin(dop_src, pam), 1.0, -1.0).astype(np.float32)
         idx, innervated, reflex = select_plastic(g["source"], g["target"], g["weight"], dop_dst, dop_cnt,
-                                                 senses.annotations.superclass)
+                                                 senses.annotations.superclass, g["cell_types"])
         brain.attach_plasticity(Plasticity(brain.model, idx, innervated, reflex, dop_src, dop_dst, dop_cnt,
                                            dop_sign, pam, ppl1, brain.graph_sha))
         loaded = brain.load_memory(config.LEARNED_PATH)

@@ -93,7 +93,7 @@ def test_tick_with_plasticity_learns():
     src = np.array([0, 2, 3], np.int32); dst = np.array([1, 1, 1], np.int32); w = np.array([60.0, 0.0, 0.0], np.float32)
     b = FlyBrain.from_arrays(4, src, dst, w, device="cpu")
     idx, inn, ref = P.select_plastic(b.model.source, b.model.target.numpy(), b.model.weight.numpy(),
-                                     np.array([1, 1]), np.array([5, 5]), superclass)
+                                     np.array([1, 1]), np.array([5, 5]), superclass, types)
     pam, ppl1 = P.dopamine_cells(types)
     b.attach_plasticity(P.Plasticity(b.model, idx, inn, ref, np.array([2, 3]), np.array([1, 1]), np.array([5, 5]),
                                      np.array([1.0, -1.0], np.float32), pam, ppl1, graph_sha=b.graph_sha))

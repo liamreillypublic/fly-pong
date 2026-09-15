@@ -138,6 +138,7 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
                 async with lock:
                     result = await loop.run_in_executor(None, run_tick)
                 readout.decay, readout.gain = params["motor_decay"], params["motor_gain"]
+                readout.normalize = params["readout_normalize"] >= 0.5
                 if params["readout_motor"] >= 0.5:
                     move = readout.update(result.mn_left, result.mn_right)
                 else:

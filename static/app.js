@@ -207,6 +207,7 @@ for (const btn of document.querySelectorAll(".preset")) {
 $("reset-sliders").addEventListener("click", () => {
   for (const [id, v] of Object.entries(SLIDER_DEFAULTS)) setSlider(id, v);
   $("dt").value = "1"; $("shortcut").checked = true; $("readout-motor").checked = false; $("punish").checked = false;
+  $("normalize").checked = true;
   for (const other of document.querySelectorAll(".preset")) other.classList.remove("active");
 });
 for (const el of document.querySelectorAll("input[type=range]")) el.addEventListener("input", () => {
@@ -395,6 +396,7 @@ function params() {
     ball_contrast: parseFloat($("contrast").value),
     mb_strength: parseFloat($("mb").value),
     readout_motor: $("readout-motor").checked ? 1 : 0,
+    readout_normalize: $("normalize").checked ? 1 : 0,
     motor_gain: parseFloat($("gain").value),
     learning_enabled: $("learning").checked ? 1 : 0,
     learning_rate: parseFloat($("lrate").value),

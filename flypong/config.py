@@ -76,6 +76,7 @@ PARAMS: dict[str, Param] = {
     "loom_shortcut": Param(1, 0, 1),
     "mb_strength": Param(0.1, 0.0, 1.0),
     "readout_motor": Param(0, 0, 1),
+    "readout_normalize": Param(1, 0, 1),
     "punish_reflex": Param(0, 0, 1),
     "depression_u": Param(0.2, 0.0, 0.5),
 }

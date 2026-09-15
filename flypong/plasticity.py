@@ -90,17 +90,22 @@ def load_dopamine_edges(path: Path, n: int) -> tuple[np.ndarray, np.ndarray, np.
         return f["src"].astype(np.int64), f["dst"].astype(np.int64), f["count"].astype(np.float64)
 
 
-def select_plastic(source, target, weight, dop_dst, dop_count, superclass, max_plastic=MAX_PLASTIC):
+LOOM_TYPES = ("LC4", "LPLC2")
+
+
+def select_plastic(source, target, weight, dop_dst, dop_count, superclass, cell_types, max_plastic=MAX_PLASTIC):
     """Plastic edge indices (sorted CSR positions) plus two aligned masks:
-    dopamine-innervated target, reflex pathway."""
+    dopamine-innervated target, and the reflex arc (synapses from the looming
+    detectors LC4/LPLC2, or onto the DNp escape descending neurons)."""
     source, target, weight = np.asarray(source), np.asarray(target), np.asarray(weight)
     superclass = np.asarray(superclass).astype(str)
+    types = np.asarray(cell_types).astype(str)
     n = len(superclass)
     synapses_per_target = np.bincount(np.asarray(dop_dst), weights=np.asarray(dop_count, dtype=np.float64), minlength=n)
     nonzero = weight != 0
-    vp = superclass == "visual_projection"
-    dn = superclass == "descending_neuron"
-    reflex_all = (vp[source] | dn[target]) & nonzero
+    loom = np.isin(types, LOOM_TYPES)
+    escape = (superclass == "descending_neuron") & np.char.startswith(types, "DNp")
+    reflex_all = (loom[source] | escape[target]) & nonzero
     innervated_all = (synapses_per_target[target] >= 1) & nonzero
     if int((innervated_all | reflex_all).sum()) > max_plastic:
         innervated_all = (synapses_per_target[target] >= 5) & nonzero
