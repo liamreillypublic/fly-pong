@@ -63,6 +63,19 @@ def test_mushroom_body_inputs_by_eye(senses):
     assert senses.eyes["L"].mb_vpn.tolist() == [16] and senses.eyes["R"].mb_vpn.tolist() == [17]
 
 
+def test_eye_columns_and_describe_report_what_the_eyes_get(senses):
+    cols = senses.eye_columns()
+    assert cols["L"]["columns"] == [[1, 5], [5, 5]] and cols["L"]["h1"] == [1, 5] and cols["L"]["h2"] == [5, 5]
+    assert cols["R"]["columns"] == [[3, 3]] and cols["R"]["photoreceptors"] == 1 and cols["L"]["loom_cells"] == 2
+    s = senses.describe(state(0.0), P(light=1.0, ball_contrast=0.5, ball_radius_columns=0, loom_strength=0.3, mb_strength=0.1))
+    assert s["eye"] == "L" and s["dy"] == -1.0 and s["proximity"] == 1.0 and s["approaching"] is True
+    assert s["ball_column"] == [1, 5] and s["dark_photoreceptors"] == 1 and s["contrast"] == 0.5
+    assert s["loom"] == {"L": 0.3, "R": 0.0} and s["mb"] == pytest.approx(0.1) and s["light"] == 1.0
+    s = senses.describe(state(500.0, vx=-5.0), P(light=0.0, loom_shortcut=0))     # below, moving away, dark, no shortcut
+    assert s["eye"] == "R" and s["dy"] == 1.0 and s["approaching"] is False and s["ball_column"] is None
+    assert s["loom"] == {"L": 0.0, "R": 0.0} and s["dark_photoreceptors"] == 0
+
+
 def test_drive_has_one_finite_value_per_neuron(senses):
     d = senses.drive(state(100.0), P())
     assert d.shape == (24,) and d.dtype == np.float32 and np.isfinite(d).all()

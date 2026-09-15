@@ -162,38 +162,6 @@ class SensoryMap:
                 drive[dark] -= light * float(params.get("ball_contrast", 1.0))
         return drive
 
-    def eye_columns(self) -> dict:
-        """Per eye, for drawing: column extents and the unique (hex1, hex2) columns its photoreceptors cover."""
-        out = {}
-        for side, eye in self.eyes.items():
-            cols = (np.unique(np.stack([eye.hex1, eye.hex2], axis=1), axis=0) if len(eye.photoreceptors)
-                    else np.zeros((0, 2), np.int32))
-            out[side] = {"h1": [eye.h1_min, eye.h1_max], "h2": [eye.h2_min, eye.h2_max], "columns": cols.tolist(),
-                         "photoreceptors": int(len(eye.photoreceptors)), "loom_cells": int(len(eye.loom)),
-                         "mb_cells": int(len(eye.mb_vpn))}
-        return out
-
-    def describe(self, state: GameState, params: dict) -> dict:
-        """What the eyes get this tick, for the page: the same arithmetic as drive(), summarised."""
-        eye_name, dy_abs, proximity, approaching = self.geometry(state)
-        eye = self.eyes[eye_name]
-        gate = 1.0 if approaching else 0.25
-        shape = proximity * dy_abs * gate
-        loom = float(params["loom_strength"]) * shape if float(params.get("loom_shortcut", 1)) >= 0.5 else 0.0
-        light = float(params.get("light", 0.0))
-        contrast = float(params.get("ball_contrast", 1.0))
-        radius = int(params["ball_radius_columns"])
-        column, dark = None, 0
-        if light > 0 and len(eye.photoreceptors):
-            t1 = round(eye.h1_min + (eye.h1_max - eye.h1_min) * (1.0 - proximity))
-            t2 = round(eye.h2_min + (eye.h2_max - eye.h2_min) * dy_abs)
-            distance = np.abs(eye.hex1 - t1) + np.abs(eye.hex2 - t2)
-            column, dark = [int(t1), int(t2)], int(np.count_nonzero(distance <= radius))
-        return {"eye": eye_name, "dy": round(-dy_abs if eye_name == "L" else dy_abs, 3), "proximity": round(proximity, 3),
-                "approaching": bool(approaching), "loom": {s: (round(loom, 4) if s == eye_name else 0.0) for s in ("L", "R")},
-                "mb": round(float(params.get("mb_strength", 0.0)) * shape, 4), "light": light, "contrast": contrast,
-                "ball_column": column, "radius": radius, "dark_photoreceptors": dark}
-
     @classmethod
     def from_files(cls, graph_path: Path, annotations_path: Path) -> "SensoryMap":
         g = graph_module.load(graph_path)

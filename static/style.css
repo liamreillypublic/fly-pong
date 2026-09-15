@@ -60,6 +60,14 @@ kbd { background: #0a0c12; border: 1px solid #3a4154; border-radius: 4px; paddin
 .red { color: #e05d5d; }
 #learn-chart { height: 100px; }
 .hud { margin: 8px 0; }
+.senses-wrap { margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.eyes { display: flex; gap: 8px; margin: 6px 0; }
+.eyes canvas { width: 50%; }
+#sense-line { font-size: 13px; font-variant-numeric: tabular-nums; margin: 4px 0 6px; }
+.senses-wrap .bar-row { grid-template-columns: 150px 1fr 48px; }
+.bar div.right { background: var(--blue); }
+.bar div.green-bar { background: #6bbf7a; }
+.bar div.white-bar { background: #d8dbe6; }
 .bar-row { display: grid; grid-template-columns: 110px 1fr 40px; align-items: center; gap: 8px; margin: 4px 0; }
 .bar { height: 10px; background: #0a0c12; border-radius: 5px; overflow: hidden; }
 .bar div { height: 100%; width: 0; background: var(--accent); transition: width 80ms linear; }

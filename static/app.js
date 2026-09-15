@@ -470,8 +470,58 @@ function onLearning(L) {
   }
 }
 
+// ---------- what the fly senses ----------
+let eyeCols = null;
+const EYE = { L: $("eye-l"), R: $("eye-r") };
+function eyeXY(side, h1, h2, w, h) {
+  const e = eyeCols[side], r1 = Math.max(1, e.h1[1] - e.h1[0]), r2 = Math.max(1, e.h2[1] - e.h2[0]);
+  const u = (h1 - e.h1[0]) / r1, v = (h2 - e.h2[0]) / r2;
+  const x = w - 14 - u * (w - 28);                                  // near columns (the paddle) on the right, like the game
+  const y = side === "L" ? h - 22 - v * (h - 40) : 22 + v * (h - 40);  // left eye looks up the field, right eye down
+  return [x, y];
+}
+function renderEyes(s) {
+  if (!eyeCols) return;
+  for (const side of ["L", "R"]) {
+    const c = EYE[side], ctx = c.getContext("2d"), w = c.width, h = c.height, e = eyeCols[side];
+    ctx.fillStyle = "#05060a"; ctx.fillRect(0, 0, w, h);
+    if (!e) continue;
+    const lit = s ? s.light : 0;
+    const base = Math.round(28 + 210 * Math.min(1, lit / 0.3));    // brightness of a lit column (0.3 is bright)
+    const ball = s && s.eye === side && s.ball_column ? s.ball_column : null;
+    for (const [h1, h2] of e.columns) {
+      let g = base;
+      if (ball && Math.abs(h1 - ball[0]) + Math.abs(h2 - ball[1]) <= s.radius) g = Math.round(base * (1 - s.contrast));
+      const [x, y] = eyeXY(side, h1, h2, w, h);
+      ctx.fillStyle = `rgb(${g},${g},${Math.round(g * 0.85)})`;
+      ctx.beginPath(); ctx.arc(x, y, 2.4, 0, Math.PI * 2); ctx.fill();
+    }
+    if (ball) {
+      const [x, y] = eyeXY(side, ball[0], ball[1], w, h);
+      ctx.strokeStyle = "#e05d5d"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.stroke();
+    }
+    const loom = s ? s.loom[side] : 0;
+    if (loom > 0) { ctx.strokeStyle = `rgba(243,196,84,${Math.min(1, 0.25 + loom / 0.3)})`; ctx.lineWidth = 3; ctx.strokeRect(2, 2, w - 4, h - 4); }
+    ctx.fillStyle = side === "L" ? "#f3c454" : "#6bb2f0"; ctx.font = "11px system-ui, sans-serif";
+    ctx.fillText(side === "L" ? "left eye · ball above the paddle · far wall ←→ paddle" : "right eye · ball below the paddle · far wall ←→ paddle", 8, side === "L" ? 14 : h - 6);
+  }
+}
+function senseBar(id, value, max) {
+  $(id).style.width = `${Math.min(100, (100 * value) / Math.max(max, 1e-9))}%`;
+  $(id + "-v").textContent = value.toFixed(3);
+}
+function renderSenses(s, mon) {
+  renderEyes(s);
+  if (!s) { $("sense-line").textContent = "the senses are not reported by this server"; return; }
+  const where = s.eye === "L" ? "left" : "right";
+  $("sense-line").textContent = `ball in the ${where} eye · ${Math.round(100 * s.proximity)}% of the way to the paddle · ${Math.round(100 * Math.abs(s.dy))}% off center · ${s.approaching ? "approaching" : "moving away"} · ${s.dark_photoreceptors} photoreceptors darkened · spikes this tick: photoreceptors ${mon.photoreceptors ?? 0}, LC4 ${mon.lc4 ?? 0}, LPLC2 ${mon.lplc2 ?? 0}`;
+  senseBar("sense-loom-l", s.loom.L, 1.0); senseBar("sense-loom-r", s.loom.R, 1.0);
+  senseBar("sense-mb", s.mb, 1.0); senseBar("sense-light", s.light, 1.0);
+}
+
 function onCommand(cmd) {
   setFlyMove(cmd.move);
+  renderSenses(cmd.senses, (cmd.stats && cmd.stats.monitors) || {});
   if (flash) for (const i of cmd.spikes) { if (flash[i] <= 0) active.push(i); flash[i] = 1; }
   if (atlas && legendCounts.length) {
     const counts = new Array(legendCounts.length).fill(0);
@@ -511,6 +561,7 @@ function connect() {
     const msg = JSON.parse(event.data);
     if (msg.type === "hello") {
       modelInfo = msg.model || null;
+      eyeCols = msg.eyes || null; renderEyes(null);
       $("status").textContent = statusText(msg);
     } else if (msg.type === "command") {
       replied(); onCommand(msg); sendState();

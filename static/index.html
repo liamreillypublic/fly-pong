@@ -65,6 +65,18 @@
   </section>
 
   <section id="brain-panel">
+    <div class="senses-wrap">
+      <div class="chart-title">What the fly senses, right now. It sits at its paddle facing left, seen from above: its <span class="amber">left eye</span> covers the top half of the field, its <span class="blue">right eye</span> the bottom half. Each dot is one eye column; the ball is the dark spot, the red ring marks its column. An amber frame means the looming shortcut is firing into that eye.</div>
+      <div class="eyes"><canvas id="eye-l" width="296" height="150"></canvas><canvas id="eye-r" width="296" height="150"></canvas></div>
+      <div id="sense-line" class="muted">waiting for the first tick</div>
+      <div class="bar-row"><span>Looming, left eye</span><div class="bar"><div id="sense-loom-l"></div></div><span id="sense-loom-l-v">0</span></div>
+      <div class="bar-row"><span>Looming, right eye</span><div class="bar"><div id="sense-loom-r" class="right"></div></div><span id="sense-loom-r-v">0</span></div>
+      <div class="bar-row"><span>Mushroom-body input</span><div class="bar"><div id="sense-mb" class="green-bar"></div></div><span id="sense-mb-v">0</span></div>
+      <div class="bar-row"><span>Light on the eyes</span><div class="bar"><div id="sense-light" class="white-bar"></div></div><span id="sense-light-v">0</span></div>
+      <details><summary>What is this?</summary>
+        <p>The connectome has 5,895 photoreceptors, each wired to a column of the optic lobe with a known hexagonal position. The game maps the field onto those columns: distance from the paddle runs along one hex axis, distance from the paddle's height along the other, so the ball's position picks one column in one eye. Every column gets the light level; the columns within the ball radius get it taken away, because a real fly's escape circuit answers to a dark spot growing on the eye. The looming bar is the optional shortcut that drives the LC4 and LPLC2 looming detectors of that eye directly, scaled by how close the ball is, how far off center, and whether it is approaching. The mushroom-body bar is the same shape sent to the visual projection neurons that feed the Kenyon cells, the memory that dopamine can rewrite. The spike counts on the line above are what those cells actually did this tick.</p>
+      </details>
+    </div>
     <canvas id="brain" width="600" height="600"></canvas>
     <div id="legend" class="legend"></div>
     <div class="chart-wrap">

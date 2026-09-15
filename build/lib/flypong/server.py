@@ -107,8 +107,7 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
     runtime = request.app["runtime"]
     runtime["driver"] = ws   # a new tab takes over; older tabs are told to reload
     await ws.send_json({"type": "hello", "neurons": brain.n, "device": brain.device,
-                        "defaults": config.defaults(), "learning": learning_info, "model": model_info,
-                        "eyes": getattr(senses, "eye_columns", lambda: None)()})
+                        "defaults": config.defaults(), "learning": learning_info, "model": model_info})
     async for msg in ws:
         if msg.type != WSMsgType.TEXT:
             continue
@@ -141,8 +140,6 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
                 rate = params["learning_rate"]
                 punish_reflex = params["punish_reflex"]
                 drive = senses.drive(state, params)
-                describe = getattr(senses, "describe", None)
-                sensed = describe(state, params) if describe is not None else None
 
                 def run_tick():
                     configure = getattr(brain, "configure", None)
@@ -162,7 +159,6 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
                     "type": "command", "move": move,
                     "dn": {"left": result.dn_left, "right": result.dn_right},
                     "mn": {"left": result.mn_left, "right": result.mn_right},
-                    "senses": sensed,
                     "spikes": result.fired_indices.tolist(),
                     "stats": {"total_spikes": result.total_spikes, "wall_ms": round(result.wall_ms, 2),
                               "brain_ms": round(k * dt, 3), "steps": k,
@@ -185,6 +181,4 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
             await ws.send_json({"type": "error", "message": f"brain reset: {e}"})
         except ValueError as e:   # includes json.JSONDecodeError
             await ws.send_json({"type": "error", "message": str(e)})
-        except ConnectionResetError:   # the tab reloaded or closed mid-reply: nothing to report
-            break
     return ws
