@@ -265,6 +265,32 @@ The headless fly also returns far more than the browser one (92% against
 milliseconds every frame, where the page's tick rate rises and falls with
 the machine.
 
+**Punishment only** (`--reward 0`: heat after a miss, nothing for a
+return, the way the flight-simulator flies learn), same protocol:
+
+| Phase | Balls | Returned | Per 50 balls | Synapses changed |
+|---|---|---|---|---|
+| Original connectome, learning off | 100 | 91 (91%) | 92, 90 | 0 |
+| Learning on, heat only | 300 | 235 (78%) | 82, 80, 76, 78, 78, 76 | mushroom body 1.98 M by 137%, reflex arc 25,358 by 69% |
+| Trained weights frozen | 100 | 78 (78%) | 82, 74 | same |
+
+Worse than reward and punishment together, and flat: no recovery.
+
+**What the two runs together show.** With no reward at all, the mushroom
+body still changed two million synapses by 137% on average, almost the
+same as with reward (152%). That change cannot come from the outcomes;
+it comes from the dopamine cells' own spontaneous firing (about 300
+spikes per second across the 332 cells at rest), which with a 1.5 s
+eligibility window potentiates every recently active synapse all the
+time. So most of what the page calls learning is drift driven by tonic
+dopamine, and the outcome-driven part rides on top of it as a small
+perturbation. That is the likeliest reason every session lands a little
+below the untrained reflex: the mushroom body is being randomly rewritten,
+not taught. The fix this implies is the one real dopamine systems use:
+plasticity should follow the phasic deviation from the tonic level, not
+the level itself. It is not implemented; five sessions is where this
+project stops and says what it found.
+
 ## Setup
 
 1. Clone and build the upstream simulator next to this folder:
