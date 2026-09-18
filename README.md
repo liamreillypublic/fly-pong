@@ -6,6 +6,12 @@ from the MaleCNS v1.0 connectome, stepping every frame on an Apple Silicon GPU.
 
 ![Fly Pong](docs/screenshot.png)
 
+*The fly's paddle on the right, what its two compound eyes see in the middle
+(the red ring is the ball's eye column), and its 166,700 neurons below,
+flashing as they fire. [The whole instrument panel](docs/full-page.png)
+adds the escape-neuron trace, the dopamine readout and the fly's hunger
+and fear.*
+
 ## How it works
 
 The fly sits at the right paddle facing left, seen from above. Its left eye
@@ -19,10 +25,13 @@ covers the top half of the screen, its right eye the bottom half.
   game frame (default 4). On an M3 Pro that is about 22 brain updates per
   second. Reaction latency is real: the escape pathway needs about 8 brain
   milliseconds from stimulus to descending output.
-- **Moving.** No training. Left-side descending neurons firing move the
-  paddle up, right-side down. The cells that fire are DNp02 and DNp04, the
+- **Moving.** Left-side descending neurons firing move the paddle up,
+  right-side down. Nothing about that mapping is trained; it is the
+  connectome's own wiring. The cells that fire are DNp02 and DNp04, the
   fly's real looming-escape neurons, which the connectome wires strictly
-  to one side.
+  to one side. (The fly can also learn, through its real dopamine cells.
+  Five measured training sessions are below, and none of them made it a
+  better player.)
 
 The one shortcut on the sensory side, stated on the page too: the link from
 the retina image to the looming detectors is computed by this program,

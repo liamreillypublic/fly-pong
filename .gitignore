@@ -5,3 +5,5 @@ __pycache__/
 static/atlas.bin
 data/
 *.egg-info/
+build/
+dist/
